@@ -1,0 +1,18 @@
+<header class="admin-topbar">
+  <div class="admin-container admin-topbar-inner">
+    <a class="admin-brand" href="{{ url_for('admin_dashboard') }}"><img src="{{ image_url(site.logo_storage, site.logo_filename) }}" alt="{{ site.brand_name }}"></a>
+    <button class="admin-menu-toggle" type="button" aria-label="Abrir menu" aria-controls="admin-navigation" aria-expanded="false">☰</button>
+    <nav class="admin-nav" id="admin-navigation" aria-label="Navegação administrativa">
+      <a class="{% if active_page == 'agenda' %}active{% endif %}" href="{{ url_for('admin_dashboard') }}">Agenda</a>
+      <a class="{% if active_page == 'conteudo' %}active{% endif %}" href="{{ url_for('admin_content') }}">Textos e preços</a>
+      <a class="{% if active_page == 'cardapio' %}active{% endif %}" href="{{ url_for('admin_menu') }}">Cardápio</a>
+      <a class="{% if active_page == 'galeria' %}active{% endif %}" href="{{ url_for('admin_gallery') }}">Fotos</a>
+      <a class="{% if active_page == 'equipe' %}active{% endif %}" href="{{ url_for('admin_team') }}">Equipe</a>
+      <a href="{{ url_for('inicio') }}" target="_blank">Ver site ↗</a>
+    </nav>
+    <form action="{{ url_for('admin_logout') }}" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="admin-logout" type="submit">Sair</button>
+    </form>
+  </div>
+</header>

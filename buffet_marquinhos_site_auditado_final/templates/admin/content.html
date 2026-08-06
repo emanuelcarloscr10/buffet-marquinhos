@@ -1,0 +1,153 @@
+{% extends "admin/base.html" %}
+{% block title %}Textos e preços{% endblock %}
+{% block body %}
+{% include "admin/_topbar.html" %}
+<main class="admin-container admin-main">
+  <div class="admin-heading">
+    <div><div class="eyebrow">Edição do site</div><h1>Textos, contatos e preços</h1><p>O que você salvar aqui aparece no site público sem precisar alterar o código.</p></div>
+  </div>
+  {% include "admin/_flash.html" %}
+
+  <form method="post" action="{{ url_for('admin_save_content') }}" class="admin-content-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <section class="admin-panel form-section">
+      <div class="form-section-heading"><div><h2>Identidade e contato</h2><p>Dados usados no cabeçalho, rodapé e formulário de orçamento.</p></div></div>
+      <div class="admin-form three-columns">
+        <label>Nome da empresa<input name="brand_name" value="{{ site.brand_name }}" required></label>
+        <label>Ano de início<input name="since_year" type="number" min="1900" max="{{ current_year }}" value="{{ site.since_year }}" required></label>
+        <label>Cidade-base<input name="base_city" value="{{ site.base_city }}" required></label>
+        <label>WhatsApp para links<small>Somente números, com 55 + DDD.</small><input name="whatsapp_number" value="{{ site.whatsapp_number }}" required></label>
+        <label>WhatsApp visível<input name="whatsapp_display" value="{{ site.whatsapp_display }}" required></label>
+        <label>Instagram sem @<input name="instagram_handle" value="{{ site.instagram_handle }}" required></label>
+        <label class="wide">Endereço<input name="address" value="{{ site.address }}" required></label>
+        <label>CNPJ<input name="cnpj" value="{{ site.cnpj }}" required></label>
+        <label>Frase do rodapé<input name="footer_tagline" value="{{ site.footer_tagline }}" required></label>
+        <label class="wide">Título da aba do navegador<input name="page_title" value="{{ site.page_title }}" required></label>
+        <label class="wide">Descrição para Google<textarea name="meta_description" required>{{ site.meta_description }}</textarea></label>
+      </div>
+    </section>
+
+    <section class="admin-panel form-section">
+      <div class="form-section-heading"><div><h2>Capa do site</h2><p>Os textos que aparecem primeiro para o cliente.</p></div></div>
+      <div class="admin-form">
+        <label class="wide">Faixa superior<input name="hero_badge" value="{{ site.hero_badge }}" required></label>
+        <label>Título principal<input name="hero_title" value="{{ site.hero_title }}" required></label>
+        <label>Trecho dourado<input name="hero_highlight" value="{{ site.hero_highlight }}" required></label>
+        <label class="wide">Descrição<textarea name="hero_description" required>{{ site.hero_description }}</textarea></label>
+      </div>
+    </section>
+
+    <section class="admin-panel form-section">
+      <div class="form-section-heading"><div><h2>Nossa história</h2><p>Use este espaço para reforçar experiência e credibilidade.</p></div></div>
+      <div class="admin-form">
+        <label>Chamada pequena<input name="story_eyebrow" value="{{ site.story_eyebrow }}" required></label>
+        <label>Título<input name="story_title" value="{{ site.story_title }}" required></label>
+        <label>Trecho dourado<input name="story_highlight" value="{{ site.story_highlight }}" required></label>
+        <label class="wide">História<textarea rows="7" name="story_text" required>{{ site.story_text }}</textarea></label>
+      </div>
+    </section>
+
+
+    <section class="admin-panel form-section">
+      <div class="form-section-heading"><div><h2>Quem somos</h2><p>Edite o título e a apresentação da equipe do Buffet do Marquinhos.</p></div></div>
+      <div class="admin-form">
+        <label>Chamada pequena<input name="corporate_eyebrow" value="{{ corporate.eyebrow }}" required></label>
+        <label>Título<input name="corporate_title" value="{{ corporate.title }}" required></label>
+        <label>Trecho dourado<input name="corporate_highlight" value="{{ corporate.highlight }}" required></label>
+        <label class="wide">Descrição<textarea rows="5" name="corporate_description" required>{{ corporate.description }}</textarea></label>
+      </div>
+    </section>
+
+    <section class="admin-panel form-section">
+      <div class="form-section-heading"><div><h2>Títulos das seções</h2><p>Altere os títulos e explicações principais do site.</p></div></div>
+      <div class="admin-form">
+        <label>Chamada de valores<input name="pricing_eyebrow" value="{{ site.pricing_eyebrow }}" required></label>
+        <label>Título de valores<input name="pricing_title" value="{{ site.pricing_title }}" required></label>
+        <label class="wide">Descrição de valores<textarea name="pricing_description" required>{{ site.pricing_description }}</textarea></label>
+        <label class="wide">Aviso de valores<textarea name="pricing_notice" required>{{ site.pricing_notice }}</textarea></label>
+        <label class="wide">Regra das sobremesas<textarea name="dessert_notice" required>{{ site.dessert_notice }}</textarea></label>
+        <label class="wide">Aviso de deslocamento<textarea name="travel_notice" required>{{ site.travel_notice }}</textarea></label>
+
+        <label>Chamada do cardápio<input name="menu_eyebrow" value="{{ site.menu_eyebrow }}" required></label>
+        <label>Título do cardápio<input name="menu_title" value="{{ site.menu_title }}" required></label>
+        <label class="wide">Descrição do cardápio<textarea name="menu_description" required>{{ site.menu_description }}</textarea></label>
+
+        <label>Chamada da agenda<input name="availability_eyebrow" value="{{ site.availability_eyebrow }}" required></label>
+        <label>Título da agenda<input name="availability_title" value="{{ site.availability_title }}" required></label>
+        <label class="wide">Descrição da agenda<textarea name="availability_description" required>{{ site.availability_description }}</textarea></label>
+
+        <label>Chamada da galeria<input name="gallery_eyebrow" value="{{ site.gallery_eyebrow }}" required></label>
+        <label>Título da galeria<input name="gallery_title" value="{{ site.gallery_title }}" required></label>
+
+        <label>Chamada do contato<input name="contact_eyebrow" value="{{ site.contact_eyebrow }}" required></label>
+        <label>Título do contato<input name="contact_title" value="{{ site.contact_title }}" required></label>
+        <label class="wide">Descrição do contato<textarea name="contact_description" required>{{ site.contact_description }}</textarea></label>
+      </div>
+    </section>
+
+    <div class="sticky-save"><button class="btn btn-gold" type="submit">Salvar textos e contatos</button></div>
+  </form>
+
+  <section class="admin-grid media-settings">
+    <article class="admin-panel">
+      <h2>Trocar logo</h2>
+      <div class="current-media"><img src="{{ image_url(site.logo_storage, site.logo_filename) }}" alt="Logo atual"></div>
+      <form method="post" enctype="multipart/form-data" action="{{ url_for('admin_upload_logo') }}" class="admin-form single">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>Nova imagem<input type="file" name="logo" accept="image/jpeg,image/png,image/webp" required></label>
+        <button class="btn btn-outline" type="submit">Enviar novo logo</button>
+      </form>
+    </article>
+    <article class="admin-panel">
+      <h2>Cardápio original</h2>
+      <div class="current-media menu-preview"><img src="{{ image_url(site.official_menu_storage, site.official_menu_filename) }}" alt="Cardápio atual"></div>
+      <form method="post" enctype="multipart/form-data" action="{{ url_for('admin_upload_official_menu') }}" class="admin-form single">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>Nova imagem<input type="file" name="official_menu" accept="image/jpeg,image/png,image/webp" required></label>
+        <button class="btn btn-outline" type="submit">Enviar novo cardápio</button>
+      </form>
+    </article>
+  </section>
+
+  <section class="admin-panel" id="precos">
+    <div class="form-section-heading"><div><h2>Pacotes e preços</h2><p>Edite, esconda ou reorganize os pacotes mostrados ao cliente.</p></div></div>
+    <div class="package-admin-list">
+      {% for package in packages %}
+      <article class="package-admin-card">
+        <form method="post" action="{{ url_for('admin_save_package', package_id=package.id) }}" class="admin-form package-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label>Nome<input name="name" value="{{ package.name }}" required></label>
+          <label>Preço<input name="price" value="{{ money_br(package.price) }}" inputmode="decimal" required></label>
+          <label>Ordem<input name="sort_order" type="number" value="{{ package.sort_order }}"></label>
+          <label>Selo opcional<input name="badge" value="{{ package.badge or '' }}" placeholder="Ex.: Completo"></label>
+          <label class="wide">Descrição<textarea name="description">{{ package.description }}</textarea></label>
+          <label class="checkbox-label"><input type="checkbox" name="featured" {% if package.featured %}checked{% endif %}> Destacar este pacote</label>
+          <label class="checkbox-label"><input type="checkbox" name="active" {% if package.active %}checked{% endif %}> Mostrar no site</label>
+          <button class="btn btn-outline" type="submit">Salvar pacote</button>
+        </form>
+        <form method="post" action="{{ url_for('admin_delete_package', package_id=package.id) }}" onsubmit="return confirm('Excluir este pacote?')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="text-danger" type="submit">Excluir pacote</button>
+        </form>
+      </article>
+      {% endfor %}
+    </div>
+
+    <details class="admin-details">
+      <summary>+ Adicionar novo pacote</summary>
+      <form method="post" action="{{ url_for('admin_new_package') }}" class="admin-form package-form details-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>Nome<input name="name" required></label>
+        <label>Preço<input name="price" placeholder="Ex.: 80,00" inputmode="decimal" required></label>
+        <label>Ordem<input name="sort_order" type="number" value="10"></label>
+        <label>Selo opcional<input name="badge"></label>
+        <label class="wide">Descrição<textarea name="description"></textarea></label>
+        <label class="checkbox-label"><input type="checkbox" name="featured"> Destacar este pacote</label>
+        <label class="checkbox-label"><input type="checkbox" name="active" checked> Mostrar no site</label>
+        <button class="btn btn-gold" type="submit">Adicionar pacote</button>
+      </form>
+    </details>
+  </section>
+</main>
+{% endblock %}

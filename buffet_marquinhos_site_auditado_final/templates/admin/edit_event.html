@@ -1,0 +1,21 @@
+{% extends "admin/base.html" %}
+{% block title %}Editar evento{% endblock %}
+{% block body %}
+{% include "admin/_topbar.html" %}
+<main class="admin-container admin-main narrow">
+  <div class="admin-heading"><div><div class="eyebrow">Evento #{{ event.id }}</div><h1>Editar evento</h1><p>{{ event.client_name }} · {{ event.event_date.strftime('%d/%m/%Y') }}</p></div></div>
+  {% include "admin/_flash.html" %}
+  <section class="admin-panel">
+    <form method="post" class="admin-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>Data*<input type="date" name="event_date" value="{{ event.event_date.isoformat() }}" required></label><label>Horário<input type="time" name="event_time" value="{{ event.event_time.strftime('%H:%M') if event.event_time else '' }}"></label>
+      <label>Cliente*<input name="client_name" value="{{ event.client_name }}" required></label><label>Telefone<input name="phone" value="{{ event.phone or '' }}"></label>
+      <label>Cidade*<input name="city" value="{{ event.city }}" required></label><label>Local<input name="venue" value="{{ event.venue or '' }}"></label>
+      <label>Convidados<input type="number" min="1" name="guests" value="{{ event.guests or '' }}"></label><label>Tipo de evento<input name="event_type" value="{{ event.event_type or '' }}"></label>
+      <label>Status<select name="status">{% for value, label in status_labels.items() %}<option value="{{ value }}" {% if event.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+      <label class="wide">Cardápio<textarea name="menu">{{ event.menu or '' }}</textarea></label><label class="wide">Observações<textarea name="notes">{{ event.notes or '' }}</textarea></label>
+      <button class="btn btn-gold wide" type="submit">Salvar alterações</button>
+    </form>
+  </section>
+  <form method="post" action="{{ url_for('admin_delete_event', event_id=event.id) }}" onsubmit="return confirm('Excluir este evento definitivamente?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="danger-button" type="submit">Excluir evento</button></form>
+</main>
+{% endblock %}

@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: buffet-marquinhos-praia-grande-sc
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --workers 1 --threads 4 --timeout 120 app:app
+    healthCheckPath: /health
+    disk:
+      name: buffet-dados
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: DATABASE_URL
+        value: sqlite:////var/data/buffet.db
+      - key: UPLOAD_ROOT
+        value: /var/data/uploads

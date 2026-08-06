@@ -1,0 +1,20 @@
+PAINEL DO BUFFET DO MARQUINHOS
+
+Depois de publicado:
+1. Abra o seu domínio.
+2. Acrescente /admin ao final.
+3. Digite a senha criada no Render.
+
+NO PAINEL:
+- Agenda: reservas e disponibilidade.
+- Textos e preços: história, contato, valores, logo e cardápio oficial.
+- Cardápio: pratos e categorias.
+- Fotos: novas imagens, exclusões, capa e seção da história.
+
+WHATSAPP CONFIGURADO: (48) 98860-8441
+ANO DE INÍCIO: 2013
+
+Leia README.md e GUIA_DOMINIO_E_PUBLICACAO.md para publicar.
+
+
+EQUIPE: acesse /admin/equipe para trocar as imagens provisórias por fotos reais.

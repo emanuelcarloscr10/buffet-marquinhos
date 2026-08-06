@@ -1,0 +1,68 @@
+{% extends "admin/base.html" %}
+{% block title %}Editar cardápio{% endblock %}
+{% block body %}
+{% include "admin/_topbar.html" %}
+<main class="admin-container admin-main">
+  <div class="admin-heading"><div><div class="eyebrow">Edição do site</div><h1>Cardápio</h1><p>Adicione, altere, esconda ou exclua categorias e opções.</p></div></div>
+  {% include "admin/_flash.html" %}
+
+  <section class="admin-panel">
+    <h2>Adicionar categoria</h2>
+    <form method="post" action="{{ url_for('admin_new_category') }}" class="admin-form menu-category-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>Nome<input name="name" placeholder="Ex.: Bebidas" required></label>
+      <label>Descrição opcional<input name="description"></label>
+      <label>Ordem<input type="number" name="sort_order" value="10"></label>
+      <label class="checkbox-label"><input type="checkbox" name="active" checked> Mostrar no site</label>
+      <button class="btn btn-gold" type="submit">Adicionar categoria</button>
+    </form>
+  </section>
+
+  <div class="menu-admin-grid">
+    {% for category in categories %}
+    <section class="admin-panel menu-admin-category" id="categoria-{{ category.id }}">
+      <div class="menu-admin-header">
+        <form method="post" action="{{ url_for('admin_save_category', category_id=category.id) }}" class="admin-form category-edit-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label>Categoria<input name="name" value="{{ category.name }}" required></label>
+          <label>Descrição<input name="description" value="{{ category.description or '' }}"></label>
+          <label>Ordem<input type="number" name="sort_order" value="{{ category.sort_order }}"></label>
+          <label class="checkbox-label"><input type="checkbox" name="active" {% if category.active %}checked{% endif %}> Mostrar no site</label>
+          <button class="btn btn-outline" type="submit">Salvar categoria</button>
+        </form>
+        <form method="post" action="{{ url_for('admin_delete_category', category_id=category.id) }}" onsubmit="return confirm('Excluir esta categoria e todos os itens dela?')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="text-danger" type="submit">Excluir categoria</button>
+        </form>
+      </div>
+
+      <div class="menu-item-admin-list">
+        {% for item in category.items %}
+        <form method="post" action="{{ url_for('admin_save_menu_item', item_id=item.id) }}" class="menu-item-row">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="category_id" value="{{ category.id }}">
+          <input name="name" value="{{ item.name }}" aria-label="Nome do item" required>
+          <input class="order-input" type="number" name="sort_order" value="{{ item.sort_order }}" aria-label="Ordem">
+          <label class="checkbox-label compact"><input type="checkbox" name="active" {% if item.active %}checked{% endif %}> Visível</label>
+          <button class="small-save" type="submit">Salvar</button>
+        </form>
+        <form method="post" action="{{ url_for('admin_delete_menu_item', item_id=item.id) }}" class="inline-delete" onsubmit="return confirm('Excluir este item?')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" aria-label="Excluir">×</button>
+        </form>
+        {% endfor %}
+      </div>
+
+      <form method="post" action="{{ url_for('admin_new_menu_item') }}" class="menu-item-new">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="category_id" value="{{ category.id }}">
+        <input name="name" placeholder="Nova opção" required>
+        <input class="order-input" type="number" name="sort_order" value="{{ category.items|length + 1 }}" aria-label="Ordem">
+        <label class="checkbox-label compact"><input type="checkbox" name="active" checked> Visível</label>
+        <button class="btn btn-gold" type="submit">Adicionar</button>
+      </form>
+    </section>
+    {% endfor %}
+  </div>
+</main>
+{% endblock %}

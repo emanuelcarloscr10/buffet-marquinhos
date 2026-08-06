@@ -1,0 +1,68 @@
+{% extends "admin/base.html" %}
+{% block title %}Agenda administrativa{% endblock %}
+{% block body %}
+{% include "admin/_topbar.html" %}
+<main class="admin-container admin-main">
+  <div class="admin-heading">
+    <div><div class="eyebrow">Painel administrativo</div><h1>Agenda do Buffet</h1><p>Cadastre os eventos. A disponibilidade pública é atualizada automaticamente.</p></div>
+    <div class="capacity-badge">Limite atual: <strong>{{ current_settings.max_events_per_day }} eventos/dia</strong></div>
+  </div>
+
+  {% include "admin/_flash.html" %}
+
+  <section class="admin-grid">
+    <article class="admin-panel admin-form-panel">
+      <h2>Novo evento</h2>
+      <form method="post" action="{{ url_for('admin_new_event') }}" class="admin-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>Data*<input type="date" name="event_date" required></label><label>Horário<input type="time" name="event_time"></label>
+        <label>Cliente*<input name="client_name" required placeholder="Nome do cliente"></label><label>Telefone<input name="phone" placeholder="(00) 00000-0000"></label>
+        <label>Cidade*<input name="city" value="{{ site.base_city }}" required></label><label>Local<input name="venue" placeholder="Salão, endereço..."></label>
+        <label>Convidados<input type="number" min="1" name="guests"></label><label>Tipo de evento<input name="event_type" placeholder="Casamento, aniversário..."></label>
+        <label>Status<select name="status"><option value="reservado">Reservado</option><option value="confirmado">Confirmado</option><option value="cancelado">Cancelado</option></select></label>
+        <label class="wide">Cardápio<textarea name="menu" placeholder="Pacote e escolhas do cliente"></textarea></label>
+        <label class="wide">Observações<textarea name="notes" placeholder="Pagamento, equipe, deslocamento..."></textarea></label>
+        <button class="btn btn-gold wide" type="submit">Cadastrar evento</button>
+      </form>
+    </article>
+
+    <aside class="admin-side">
+      <article class="admin-panel">
+        <h2>Bloquear uma data</h2><p>Use para folgas, manutenção ou qualquer dia que não aceite eventos.</p>
+        <form method="post" action="{{ url_for('admin_block_date') }}" class="admin-form single">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label>Data<input type="date" name="blocked_date" required></label><label>Motivo<input name="reason" placeholder="Opcional"></label>
+          <button class="btn btn-outline" type="submit">Bloquear data</button>
+        </form>
+      </article>
+      <article class="admin-panel">
+        <h2>Capacidade diária</h2><p>O padrão é dois eventos por dia. Você pode alterar quando necessário.</p>
+        <form method="post" action="{{ url_for('admin_settings') }}" class="admin-form single">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label>Máximo por dia<input type="number" min="1" max="10" name="max_events_per_day" value="{{ current_settings.max_events_per_day }}" required></label>
+          <button class="btn btn-outline" type="submit">Salvar limite</button>
+        </form>
+      </article>
+      <article class="admin-panel">
+        <h2>Próximos eventos</h2>
+        {% if upcoming %}<div class="upcoming-list">{% for event in upcoming %}<a href="{{ url_for('admin_edit_event', event_id=event.id) }}"><strong>{{ event.event_date.strftime('%d/%m/%Y') }}{% if event.event_time %} · {{ event.event_time.strftime('%H:%M') }}{% endif %}</strong><span>{{ event.client_name }} · {{ event.city }}</span></a>{% endfor %}</div>{% else %}<p>Nenhum evento futuro cadastrado.</p>{% endif %}
+      </article>
+    </aside>
+  </section>
+
+  <section class="admin-panel calendar-panel">
+    <div class="calendar-toolbar"><a href="{{ url_for('admin_dashboard', mes=previous) }}">←</a><h2>{{ month_name }} de {{ year }}</h2><a href="{{ url_for('admin_dashboard', mes=following) }}">→</a></div>
+    <div class="admin-legend"><span><i class="dot available"></i> Disponível</span><span><i class="dot limited"></i> Última vaga</span><span><i class="dot full"></i> Lotada/bloqueada</span></div>
+    <div class="calendar-weekdays"><span>Dom</span><span>Seg</span><span>Ter</span><span>Qua</span><span>Qui</span><span>Sex</span><span>Sáb</span></div>
+    <div class="calendar-grid">
+      {% for week in weeks %}{% for day in week %}
+      <article class="calendar-day {{ day.status }} {% if not day.in_month %}outside{% endif %} {% if day.date == today %}today{% endif %}">
+        <div class="calendar-day-head"><strong>{{ day.date.day }}</strong><span>{{ day.active_count }}/{{ current_settings.max_events_per_day }}</span></div>
+        {% if day.blocked %}<div class="blocked-label">Bloqueada{% if day.blocked.reason %}: {{ day.blocked.reason }}{% endif %}</div><form method="post" action="{{ url_for('admin_unblock_date', block_id=day.blocked.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="mini-action" type="submit">Desbloquear</button></form>{% endif %}
+        <div class="day-events">{% for event in day.events %}<a class="day-event {{ event.status }}" href="{{ url_for('admin_edit_event', event_id=event.id) }}"><strong>{% if event.event_time %}{{ event.event_time.strftime('%H:%M') }} · {% endif %}{{ event.client_name }}</strong><span>{{ event.city }}{% if event.guests %} · {{ event.guests }} pessoas{% endif %}</span></a>{% endfor %}</div>
+      </article>
+      {% endfor %}{% endfor %}
+    </div>
+  </section>
+</main>
+{% endblock %}

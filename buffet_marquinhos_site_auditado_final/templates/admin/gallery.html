@@ -1,0 +1,58 @@
+{% extends "admin/base.html" %}
+{% block title %}Editar fotos{% endblock %}
+{% block body %}
+{% include "admin/_topbar.html" %}
+<main class="admin-container admin-main">
+  <div class="admin-heading"><div><div class="eyebrow">Edição do site</div><h1>Fotos do buffet</h1><p>Envie e organize as fotos de churrasco, pratos, saladas e sobremesas. As fotografias da equipe são administradas na área “Equipe”.</p></div></div>
+  {% include "admin/_flash.html" %}
+
+  <section class="admin-grid gallery-admin-top">
+    <article class="admin-panel">
+      <h2>Enviar novas fotos</h2>
+      <form method="post" enctype="multipart/form-data" action="{{ url_for('admin_upload_gallery') }}" class="admin-form single">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>Fotos<small>Você pode selecionar várias de uma vez. Máximo de 12 MB por envio.</small><input type="file" name="photos" multiple accept="image/jpeg,image/png,image/webp" required></label>
+        <label>Categoria<select name="category">{% for key, label in gallery_categories.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></label>
+        <button class="btn btn-gold" type="submit">Enviar fotos</button>
+      </form>
+    </article>
+    <article class="admin-panel">
+      <h2>Fotos de destaque</h2>
+      <p>Escolha quais imagens aparecem na capa e na seção “Nossa história”.</p>
+      <form method="post" action="{{ url_for('admin_gallery_roles') }}" class="admin-form single">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% set role_fields = [('hero_image_id','Capa do site',site.hero_image_id),('about_image_1_id','Nossa história — foto 1',site.about_image_1_id),('about_image_2_id','Nossa história — foto 2',site.about_image_2_id),('about_image_3_id','Nossa história — foto 3',site.about_image_3_id)] %}
+        {% for field, label, selected_id in role_fields %}
+        <label>{{ label }}<select name="{{ field }}"><option value="">Usar imagem padrão</option>{% for image in images %}<option value="{{ image.id }}" {% if image.id == selected_id %}selected{% endif %}>Foto #{{ image.id }} — {{ gallery_categories.get(image.category, image.category) }}</option>{% endfor %}</select></label>
+        {% endfor %}
+        <button class="btn btn-outline" type="submit">Salvar destaques</button>
+      </form>
+    </article>
+  </section>
+
+  <section class="admin-panel">
+    <div class="form-section-heading"><div><h2>Todas as fotos</h2><p>A ordem menor aparece primeiro na galeria.</p></div><span class="capacity-badge">{{ images|length }} fotos</span></div>
+    <div class="gallery-admin-grid">
+      {% for image in images %}
+      <article class="gallery-admin-card" id="foto-{{ image.id }}">
+        <img src="{{ image_url(image.storage, image.filename) }}" alt="Foto #{{ image.id }}">
+        <div class="gallery-admin-card-body">
+          <strong>Foto #{{ image.id }}</strong>
+          <form method="post" action="{{ url_for('admin_save_gallery_image', image_id=image.id) }}" class="admin-form single compact-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label>Categoria<select name="category">{% for key, label in gallery_categories.items() %}<option value="{{ key }}" {% if image.category == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+            <label>Ordem<input type="number" name="sort_order" value="{{ image.sort_order }}"></label>
+            <label class="checkbox-label"><input type="checkbox" name="active" {% if image.active %}checked{% endif %}> Mostrar no site</label>
+            <button class="small-save" type="submit">Salvar</button>
+          </form>
+          <form method="post" action="{{ url_for('admin_delete_gallery_image', image_id=image.id) }}" onsubmit="return confirm('Excluir esta foto?')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="text-danger" type="submit">Excluir foto</button>
+          </form>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+</main>
+{% endblock %}

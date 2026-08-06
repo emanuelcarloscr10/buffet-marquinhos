@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{{ site.page_title }}</title>
+  <meta name="description" content="{{ site.meta_description }}">
+  <link rel="icon" href="{{ url_for('static', filename='images/favicon.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+<header class="header">
+  <div class="container nav">
+    <a class="brand" href="#inicio"><img src="{{ image_url(site.logo_storage, site.logo_filename) }}" alt="{{ site.brand_name }}"></a>
+    <button
+      class="menu-toggle"
+      type="button"
+      aria-label="Abrir menu"
+      aria-controls="site-navigation"
+      aria-expanded="false"
+    >
+      <span class="menu-icon" aria-hidden="true"></span>
+    </button>
+    <nav class="nav-links" id="site-navigation" aria-label="Navegação principal">
+      <a href="#sobre">Sobre</a>
+      <a href="#cardapio">Cardápio</a>
+      <a href="#valores">Valores</a>
+      <a href="#disponibilidade">Agenda</a>
+      <a href="#galeria">Galeria</a>
+      <a href="#equipe">Quem somos</a>
+      <a href="#contato" class="btn btn-gold">Pedir orçamento</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<section class="hero" id="inicio" style="--hero-image:url('{{ hero_image_url }}')">
+  <div class="container hero-inner">
+    <div class="hero-badge">{{ site.hero_badge }}</div>
+    <img class="hero-logo" src="{{ image_url(site.logo_storage, site.logo_filename) }}" alt="{{ site.brand_name }}">
+    <h1>{{ site.hero_title }} <span class="gold">{{ site.hero_highlight }}</span></h1>
+    <p>{{ site.hero_description }}</p>
+    <div class="hero-actions">
+      <a href="#disponibilidade" class="btn btn-gold">Consultar uma data</a>
+      <a href="#cardapio" class="btn btn-outline">Conhecer o cardápio</a>
+    </div>
+  </div>
+</section>
+
+<div class="container stats">
+  <div class="stats-grid">
+    <div class="stat"><strong>Desde {{ site.since_year }}</strong><span>no ramo de buffet de eventos</span></div>
+    <div class="stat"><strong>Personalizado</strong><span>cardápio conforme o seu evento</span></div>
+    <div class="stat"><strong>{{ max_events_per_day }}</strong><span>eventos disponíveis por dia</span></div>
+    <div class="stat"><strong>Completo</strong><span>louças, talheres e taças inclusos</span></div>
+  </div>
+</div>
+
+<section class="section" id="sobre">
+  <div class="container about-grid">
+    <div class="about-collage">
+      {% for photo in about_images %}<img src="{{ photo }}" alt="Foto real do {{ site.brand_name }}">{% endfor %}
+    </div>
+    <div>
+      <div class="eyebrow">{{ site.story_eyebrow }}</div>
+      <h2 class="section-title">{{ site.story_title }} <span class="gold">{{ site.story_highlight }}</span></h2>
+      <p class="section-copy preserve-lines">{{ site.story_text }}</p>
+      <div class="check-list">
+        <div class="check">Experiência no ramo de eventos desde {{ site.since_year }}</div>
+        <div class="check">Casamentos, aniversários, formaturas e eventos corporativos</div>
+        <div class="check">Atendimento em {{ site.base_city }} e região</div>
+        <div class="check">Estrutura de serviço incluída no pacote</div>
+      </div>
+      <a href="https://www.instagram.com/{{ site.instagram_handle }}" target="_blank" rel="noopener" class="btn btn-outline">Conhecer nosso trabalho</a>
+    </div>
+  </div>
+</section>
+
+<section class="section section-dark" id="valores">
+  <div class="container">
+    <div class="eyebrow">{{ site.pricing_eyebrow }}</div>
+    <h2 class="section-title">{{ site.pricing_title }}</h2>
+    <p class="section-copy preserve-lines">{{ site.pricing_description }}</p>
+    <div class="pricing-grid">
+      {% for package in pricing_packages %}
+      <article class="price-card {% if package.featured %}featured{% endif %}">
+        {% if package.badge %}<span class="tag">{{ package.badge }}</span>{% endif %}
+        <h3>{{ package.name }}</h3>
+        <div class="price">R$ {{ money_br(package.price) }}<small> / pessoa</small></div>
+        <p>{{ package.description }}</p>
+      </article>
+      {% endfor %}
+    </div>
+    <div class="notice"><strong>Importante:</strong> {{ site.pricing_notice }}</div>
+    <div class="notice dessert-notice"><strong>Sobremesas:</strong> {{ site.dessert_notice }}</div>
+    <div class="notice travel-notice"><strong>Deslocamento:</strong> {{ site.travel_notice }}</div>
+  </div>
+</section>
+
+<section class="section" id="cardapio">
+  <div class="container">
+    <div class="eyebrow">{{ site.menu_eyebrow }}</div>
+    <h2 class="section-title">{{ site.menu_title }}</h2>
+    <p class="section-copy preserve-lines">{{ site.menu_description }}</p>
+    <div class="menu-layout">
+      {% for category in menu_categories %}
+      <article class="menu-card {% if category.name|lower == 'incluso' %}included{% endif %}">
+        <h3>{{ category.name }}</h3>
+        {% if category.description %}<p class="menu-description">{{ category.description }}</p>{% endif %}
+        <ul>
+          {% for item in category.items if item.active %}<li>{{ item.name }}</li>{% endfor %}
+        </ul>
+      </article>
+      {% endfor %}
+    </div>
+    <div class="menu-actions">
+      <a href="#contato" class="btn btn-gold">Montar meu orçamento</a>
+      <a href="#" class="btn btn-outline open-menu" data-full="{{ image_url(site.official_menu_storage, site.official_menu_filename) }}">Ver cardápio original</a>
+    </div>
+  </div>
+</section>
+
+<section class="section availability-section" id="disponibilidade">
+  <div class="container availability-grid">
+    <div>
+      <div class="eyebrow">{{ site.availability_eyebrow }}</div>
+      <h2 class="section-title">{{ site.availability_title }}</h2>
+      <p class="section-copy preserve-lines">{{ site.availability_description }}</p>
+      <div class="availability-legend">
+        <span><i class="dot available"></i> Disponível</span>
+        <span><i class="dot limited"></i> Última vaga</span>
+        <span><i class="dot full"></i> Lotada</span>
+      </div>
+      <p class="privacy-note">A agenda mostra somente a disponibilidade. Os dados dos clientes e dos eventos ficam protegidos no painel administrativo.</p>
+      <div class="full-date-contact">
+        <strong>Data indicada como lotada?</strong>
+        <p>Entre em contato conosco mesmo assim. Dependendo das características e do horário do evento, poderemos avaliar alternativas ou uma possibilidade excepcional de atendimento, sempre sujeita à confirmação da nossa equipe.</p>
+        <a href="https://wa.me/{{ site.whatsapp_number }}" target="_blank" rel="noopener" class="availability-whatsapp-link">
+          <span class="whatsapp-icon"><svg viewBox="0 0 448 512" aria-hidden="true" focusable="false">
+  <path fill="currentColor" d="M380.9 97.1C339 55.1 283.2 32 223.9 32c-122.4 0-222 99.6-222 222 0 39.1 10.2 77.3 29.6 111L.1 480l117.7-30.9c32.4 17.7 68.9 27 106 27h.1c122.3 0 224.1-99.6 224.1-222 0-59.3-25.2-115-67.1-157zm-157 341.6c-33.2 0-65.7-8.9-94-25.8l-6.7-4-69.8 18.3 18.6-68-4.4-7c-18.5-29.4-28.2-63.4-28.2-98.2 0-101.7 82.8-184.5 184.6-184.5 49.3 0 95.6 19.2 130.4 54.1 34.8 34.9 56.2 81.2 56.1 130.5 0 101.8-84.9 184.6-186.6 184.6zm101.4-138.2c-5.5-2.8-32.8-16.1-37.9-18-5.1-1.9-8.8-2.8-12.5 2.8-3.7 5.6-14.3 18-17.6 21.8-3.2 3.7-6.5 4.2-12 1.4-32.6-16.3-54-29.1-75.6-66-5.7-9.8 5.7-9.1 16.3-30.3 1.8-3.7.9-6.9-.5-9.7-1.4-2.8-12.5-30.1-17.1-41.2-4.5-10.8-9.1-9.3-12.5-9.5-3.2-.2-6.9-.2-10.6-.2s-9.7 1.4-14.8 6.9c-5.1 5.6-19.4 19-19.4 46.3s19.9 53.7 22.6 57.4c2.8 3.7 39.1 59.7 94.8 83.8 35.2 15.2 49 16.5 66.6 13.9 10.7-1.6 32.8-13.4 37.4-26.4 4.6-13 4.6-24.1 3.2-26.4-1.3-2.5-5-3.9-10.5-6.6z"/>
+</svg></span>
+          Consultar possibilidade pelo WhatsApp
+        </a>
+      </div>
+    </div>
+    <div class="availability-card">
+      <label for="availability-date">Data do evento</label>
+      <input id="availability-date" type="date">
+      <button type="button" id="check-availability" class="btn btn-gold">Consultar data</button>
+      <div id="availability-result" class="availability-result idle" aria-live="polite">
+        <strong>Escolha uma data</strong><span>Consulte antes de solicitar seu orçamento.</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section section-dark" id="galeria">
+  <div class="container">
+    <div class="gallery-head">
+      <div>
+        <div class="eyebrow">{{ site.gallery_eyebrow }}</div>
+        <h2 class="section-title">{{ site.gallery_title }}</h2>
+        <p class="section-copy gallery-intro">Fotos reais do nosso buffet, organizadas por categoria.</p>
+      </div>
+    </div>
+
+    <div class="gallery-category-list">
+      {% for key, label in gallery_categories.items() %}
+        {% set category_images = gallery_images|selectattr('category', 'equalto', key)|list %}
+        {% if category_images %}
+        <section class="gallery-category-block" data-category="{{ key }}">
+          <div class="gallery-category-heading">
+            <span class="gallery-category-number">0{{ loop.index }}</span>
+            <h3>{{ label }}</h3>
+          </div>
+          <div class="gallery-grid">
+            {% for image in category_images %}
+            <figure class="gallery-item" data-category="{{ image.category }}">
+              <img loading="lazy" src="{{ image_url(image.storage, image.filename) }}" alt="Foto real do {{ site.brand_name }}">
+            </figure>
+            {% endfor %}
+          </div>
+        </section>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+
+<section class="section team-section" id="equipe">
+  <div class="container">
+    <div class="team-section-head">
+      <div>
+        <div class="eyebrow">{{ corporate.eyebrow }}</div>
+        <h2 class="section-title">{{ corporate.title }} <span class="gold">{{ corporate.highlight }}</span></h2>
+      </div>
+      <p class="section-copy preserve-lines">{{ corporate.description }}</p>
+    </div>
+
+    <div class="team-grid">
+      {% for member in team_members %}
+      <article class="team-card">
+        <button class="team-member-photo" type="button" aria-label="Ampliar foto de {{ member.name }}">
+          <img loading="lazy" src="{{ image_url(member.image_storage, member.image_filename) }}" alt="{{ member.name }} — {{ member.role }}">
+        </button>
+        <div class="team-card-body">
+          <h3>{{ member.name }}</h3>
+          {% if member.role %}<div class="team-role">{{ member.role }}</div>{% endif %}
+          {% if member.bio %}<p class="preserve-lines">{{ member.bio }}</p>{% endif %}
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+
+    <div class="trust-strip">
+      <div><strong>Desde {{ site.since_year }}</strong><span>experiência construída em família</span></div>
+      <div><strong>Equipe dedicada</strong><span>cuidado em cada etapa do evento</span></div>
+      <div><strong>Atendimento próximo</strong><span>do primeiro contato ao grande dia</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <div class="eyebrow">Como funciona</div>
+    <h2 class="section-title">Do orçamento ao grande dia.</h2>
+    <div class="process-grid">
+      <div class="step"><div class="n">01</div><h3>Consulte a data</h3><p>Veja se a agenda está disponível, com última vaga ou já lotada.</p></div>
+      <div class="step"><div class="n">02</div><h3>Escolha o cardápio</h3><p>Combine entradas, pratos, churrasco, saladas e sobremesas.</p></div>
+      <div class="step"><div class="n">03</div><h3>Receba o orçamento</h3><p>A equipe confirma os detalhes, valores e eventual deslocamento.</p></div>
+      <div class="step"><div class="n">04</div><h3>Aproveite o evento</h3><p>O buffet cuida do serviço para você celebrar com tranquilidade.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="section section-dark" id="contato">
+  <div class="container contact-grid">
+    <div>
+      <div class="eyebrow">{{ site.contact_eyebrow }}</div>
+      <h2 class="section-title">{{ site.contact_title }}</h2>
+      <p class="section-copy preserve-lines">{{ site.contact_description }}</p>
+      <div class="contact-list">
+        <div><strong>WhatsApp</strong><a href="https://wa.me/{{ site.whatsapp_number }}" target="_blank" rel="noopener">{{ site.whatsapp_display }}</a></div>
+        <div><strong>Instagram</strong><a href="https://www.instagram.com/{{ site.instagram_handle }}" target="_blank" rel="noopener">@{{ site.instagram_handle }}</a></div>
+        <div><strong>Endereço</strong>{{ site.address }}</div>
+        <div><strong>CNPJ</strong>{{ site.cnpj }}</div>
+      </div>
+    </div>
+    <div class="contact-card">
+      <form class="form" id="orcamento-form" data-whatsapp="{{ site.whatsapp_number }}" data-base-city="{{ site.base_city }}" data-brand="{{ site.brand_name }}">
+        <div class="field"><label>Seu nome</label><input required name="nome" placeholder="Nome completo"></div>
+        <div class="field"><label>Data do evento</label><input required name="data" type="date" id="budget-date"><small id="budget-date-status" class="field-help">A disponibilidade será consultada automaticamente.</small></div>
+        <div class="field"><label>Cidade</label><input required name="cidade" id="event-city" placeholder="Cidade do evento"><small id="travel-warning" class="field-help hidden">Evento fora de {{ site.base_city }}: poderá haver acréscimo de deslocamento.</small></div>
+        <div class="field"><label>Número de convidados</label><input required name="convidados" type="number" min="1" placeholder="Ex.: 120"></div>
+        <div class="field"><label for="event-type">Tipo de evento</label><select name="evento" id="event-type"><option>Casamento</option><option>Aniversário</option><option>Formatura</option><option>Evento corporativo</option><option>Confraternização</option><option>Outro</option></select></div>
+        <div class="field"><label for="package-choice">Pacote desejado</label><select name="pacote" id="package-choice">{% for package in pricing_packages %}<option>{{ package.name }}</option>{% endfor %}<option>Ainda não sei</option></select></div>
+
+        <fieldset class="field full menu-builder">
+          <legend>Monte seu cardápio</legend>
+          <p class="menu-builder-help">Marque as opções que deseja consultar. A equipe confirmará combinações, quantidades e eventuais ajustes.</p>
+          <div class="menu-builder-actions">
+            <button type="button" class="menu-select-action" id="select-menu-all">Selecionar tudo</button>
+            <button type="button" class="menu-select-action" id="clear-menu-all">Limpar seleção</button>
+          </div>
+          <div class="menu-builder-grid">
+            {% for category in menu_categories %}
+              {% set active_items = category.items|selectattr('active', 'equalto', true)|list %}
+              {% if active_items %}
+              <section class="menu-choice-group">
+                <h3>{{ category.name }}</h3>
+                {% for item in active_items %}
+                <label class="menu-choice">
+                  <input
+                    type="checkbox"
+                    name="cardapio"
+                    value="{{ item.name }}"
+                    data-category="{{ category.name }}"
+                  >
+                  <span>{{ item.name }}</span>
+                </label>
+                {% endfor %}
+              </section>
+              {% endif %}
+            {% endfor %}
+          </div>
+          <label class="custom-menu-label" for="custom-menu">
+            Pratos ou pedidos personalizados
+            <textarea
+              id="custom-menu"
+              name="cardapio_personalizado"
+              placeholder="Ex.: outro tipo de lasanha, prato especial, restrição alimentar ou uma opção que não aparece no cardápio"
+            ></textarea>
+          </label>
+          <small id="menu-selection-summary" class="field-help">Nenhuma opção marcada. Você pode enviar assim mesmo e pedir orientação.</small>
+        </fieldset>
+
+        <div class="field full"><label for="budget-notes">Observações gerais</label><textarea id="budget-notes" name="mensagem" placeholder="Conte outras informações importantes sobre o evento"></textarea></div>
+        <div class="field full consent-line"><input type="checkbox" id="travel-aware" name="travel_aware"><label for="travel-aware">Estou ciente de que eventos fora de {{ site.base_city }} poderão ter acréscimo de deslocamento.</label></div>
+        <button class="btn btn-gold" type="submit" id="budget-submit">Enviar pelo WhatsApp</button>
+        <a id="whatsapp-fallback" class="whatsapp-fallback hidden" href="#" target="_blank" rel="noopener">O WhatsApp não abriu? Toque aqui</a>
+      </form>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer class="footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div><img class="footer-logo" src="{{ image_url(site.logo_storage, site.logo_filename) }}" alt="{{ site.brand_name }}"><p>{{ site.footer_tagline }}</p></div>
+      <div><h4>Navegação</h4><a href="#cardapio">Cardápio</a><br><a href="#valores">Valores</a><br><a href="#disponibilidade">Agenda</a><br><a href="#galeria">Galeria</a><br><a href="#equipe">Quem somos</a></div>
+      <div><h4>Contato</h4><a href="https://wa.me/{{ site.whatsapp_number }}" target="_blank" rel="noopener">WhatsApp</a><br><a href="https://www.instagram.com/{{ site.instagram_handle }}" target="_blank" rel="noopener">Instagram</a><br><a href="{{ url_for('admin_login') }}" class="admin-link">Área administrativa</a></div>
+    </div>
+    <div class="copyright"><span>© {{ current_year }} {{ site.brand_name }}.</span><span>{{ site.base_city }} — Santa Catarina</span></div>
+  </div>
+</footer>
+<a class="floating-wa" href="https://wa.me/{{ site.whatsapp_number }}" target="_blank" rel="noopener" aria-label="Falar com o Buffet do Marquinhos pelo WhatsApp">
+  <svg viewBox="0 0 448 512" aria-hidden="true" focusable="false">
+  <path fill="currentColor" d="M380.9 97.1C339 55.1 283.2 32 223.9 32c-122.4 0-222 99.6-222 222 0 39.1 10.2 77.3 29.6 111L.1 480l117.7-30.9c32.4 17.7 68.9 27 106 27h.1c122.3 0 224.1-99.6 224.1-222 0-59.3-25.2-115-67.1-157zm-157 341.6c-33.2 0-65.7-8.9-94-25.8l-6.7-4-69.8 18.3 18.6-68-4.4-7c-18.5-29.4-28.2-63.4-28.2-98.2 0-101.7 82.8-184.5 184.6-184.5 49.3 0 95.6 19.2 130.4 54.1 34.8 34.9 56.2 81.2 56.1 130.5 0 101.8-84.9 184.6-186.6 184.6zm101.4-138.2c-5.5-2.8-32.8-16.1-37.9-18-5.1-1.9-8.8-2.8-12.5 2.8-3.7 5.6-14.3 18-17.6 21.8-3.2 3.7-6.5 4.2-12 1.4-32.6-16.3-54-29.1-75.6-66-5.7-9.8 5.7-9.1 16.3-30.3 1.8-3.7.9-6.9-.5-9.7-1.4-2.8-12.5-30.1-17.1-41.2-4.5-10.8-9.1-9.3-12.5-9.5-3.2-.2-6.9-.2-10.6-.2s-9.7 1.4-14.8 6.9c-5.1 5.6-19.4 19-19.4 46.3s19.9 53.7 22.6 57.4c2.8 3.7 39.1 59.7 94.8 83.8 35.2 15.2 49 16.5 66.6 13.9 10.7-1.6 32.8-13.4 37.4-26.4 4.6-13 4.6-24.1 3.2-26.4-1.3-2.5-5-3.9-10.5-6.6z"/>
+</svg>
+</a>
+<div class="modal"><button class="modal-close" aria-label="Fechar">×</button><img alt="Imagem ampliada"></div>
+<noscript><div class="noscript-warning">Ative o JavaScript para consultar datas e montar a mensagem do WhatsApp.</div></noscript>
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

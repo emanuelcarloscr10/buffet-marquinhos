@@ -1,0 +1,53 @@
+{% extends "admin/base.html" %}
+{% block title %}Editar equipe{% endblock %}
+{% block body %}
+{% include "admin/_topbar.html" %}
+<main class="admin-container admin-main">
+  <div class="admin-heading">
+    <div>
+      <div class="eyebrow">Quem somos</div>
+      <h1>Equipe do Buffet</h1>
+      <p>Adicione Marquinhos, Virgínia e os demais colaboradores. Você pode trocar fotos, funções, textos e ordem de exibição.</p>
+    </div>
+  </div>
+  {% include "admin/_flash.html" %}
+
+  <section class="admin-panel">
+    <div class="form-section-heading"><div><h2>Novo integrante</h2><p>A fotografia pode ser adicionada agora ou depois.</p></div></div>
+    <form method="post" enctype="multipart/form-data" action="{{ url_for('admin_new_team_member') }}" class="admin-form three-columns">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>Nome*<input name="name" required placeholder="Nome do integrante"></label>
+      <label>Função<input name="role" placeholder="Ex.: Atendimento e organização"></label>
+      <label>Ordem<input type="number" name="sort_order" value="0"></label>
+      <label class="wide">Apresentação<textarea name="bio" rows="4" placeholder="Uma breve descrição"></textarea></label>
+      <label class="wide">Foto<input type="file" name="photo" accept="image/jpeg,image/png,image/webp"></label>
+      <label class="checkbox-label"><input type="checkbox" name="active" checked> Mostrar no site</label>
+      <button class="btn btn-gold" type="submit">Adicionar integrante</button>
+    </form>
+  </section>
+
+  <section class="team-admin-grid">
+    {% for member in members %}
+    <article class="admin-panel team-admin-card" id="integrante-{{ member.id }}">
+      <div class="team-admin-photo"><img src="{{ image_url(member.image_storage, member.image_filename) }}" alt="{{ member.name }}"></div>
+      <form method="post" enctype="multipart/form-data" action="{{ url_for('admin_save_team_member', member_id=member.id) }}" class="admin-form single">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>Nome<input name="name" value="{{ member.name }}" required></label>
+        <label>Função<input name="role" value="{{ member.role }}"></label>
+        <label>Apresentação<textarea name="bio" rows="4">{{ member.bio }}</textarea></label>
+        <label>Trocar foto<input type="file" name="photo" accept="image/jpeg,image/png,image/webp"></label>
+        <label>Ordem<input type="number" name="sort_order" value="{{ member.sort_order }}"></label>
+        <label class="checkbox-label"><input type="checkbox" name="active" {% if member.active %}checked{% endif %}> Mostrar no site</label>
+        <button class="btn btn-outline" type="submit">Salvar integrante</button>
+      </form>
+      <form method="post" action="{{ url_for('admin_delete_team_member', member_id=member.id) }}" onsubmit="return confirm('Excluir este integrante?')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="text-danger" type="submit">Excluir integrante</button>
+      </form>
+    </article>
+    {% else %}
+    <article class="admin-panel"><p>Nenhum integrante cadastrado.</p></article>
+    {% endfor %}
+  </section>
+</main>
+{% endblock %}
