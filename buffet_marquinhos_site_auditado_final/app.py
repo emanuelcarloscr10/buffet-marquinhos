@@ -1266,25 +1266,25 @@ elif max_choices > 0 and min_choices > max_choices:
         "error",
     )
 else:
-category = MenuCategory(
-    name=name,
-    description=request.form.get("description", "").strip() or None,
-    selection_help=request.form.get("selection_help", "").strip() or None,
-    min_choices=max(
-        0,
-        safe_int(request.form.get("min_choices"), 0),
-    ),
-    max_choices=max(
-        0,
-        safe_int(request.form.get("max_choices"), 0),
-    ),
-    active=request.form.get("active") == "on",
-    sort_order=safe_int(request.form.get("sort_order"), 0),
-)
+    category = MenuCategory(
+        name=name,
+        description=request.form.get("description", "").strip() or None,
+        selection_help=request.form.get("selection_help", "").strip() or None,
+        min_choices=max(
+            0,
+            safe_int(request.form.get("min_choices"), 0),
+        ),
+        max_choices=max(
+            0,
+            safe_int(request.form.get("max_choices"), 0),
+        ),
+        active=request.form.get("active") == "on",
+        sort_order=safe_int(request.form.get("sort_order"), 0),
+    )
         db.session.add(category)
         db.session.commit()
         flash("Categoria adicionada.", "success")
-    return redirect(url_for("admin_menu"))
+ return redirect(url_for("admin_menu"))
 
 
 @app.post("/admin/cardapio/categorias/<int:category_id>/salvar")
