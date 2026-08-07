@@ -159,6 +159,10 @@ class MenuCategory(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), nullable=False)
     description = db.Column(db.String(240), nullable=True)
+    min_choices = db.Column(db.Integer, nullable=false, default=0)
+    max_choices = db.Column(db.integer, nullable=true)
+    required = db.column(db.boolean, nullable=false, default=false)
+    selection_help = db.Column(db.string(420), nullable=true)
     active = db.Column(db.Boolean, nullable=False, default=True)
     sort_order = db.Column(db.Integer, nullable=False, default=0)
     items = db.relationship(
@@ -532,6 +536,28 @@ def ensure_schema_updates() -> None:
             )
 
 
+    menu_columns = {column["name"] for column in inspector.get_columns("menu_category")}
+
+    with db.engine.begin() as connection:
+        if "min_choices" not in menu_columns:
+            connection.execute(
+                text("ALTER TABLE menu_category ADD COLUMN min_choices INTEGER NOT NULL DEFAULT 0")
+            )
+
+        if "max_choices" not in menu_columns:
+            connection.execute(
+                text("ALTER TABLE menu_category ADD COLUMN max_choices INTEGER")
+            )
+
+        if "required" not in menu_columns:
+            connection.execute(
+                text("ALTER TABLE menu_category ADD COLUMN required BOOLEAN NOT NULL DEFAULT 0")
+            )
+
+        if "selection_help" not in menu_columns:
+            connection.execute(
+                text("ALTER TABLE menu_category ADD COLUMN selection_help VARCHAR(240)")
+            )
 def ensure_database() -> None:
     INSTANCE_DIR.mkdir(parents=True, exist_ok=True)
     UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
@@ -1222,15 +1248,39 @@ def admin_menu():
 @admin_required
 def admin_new_category():
     name = request.form.get("name", "").strip()
+    min_choices = max(
+    0,
+    safe_int(request.form.get("min_choices"), 0),
+)
+
+max_choices = max(
+    0,
+    safe_int(request.form.get("max_choices"), 0),
+)
+    
     if not name:
-        flash("Informe o nome da categoria.", "error")
-    else:
-        category = MenuCategory(
-            name=name,
-            description=request.form.get("description", "").strip() or None,
-            active=request.form.get("active") == "on",
-            sort_order=safe_int(request.form.get("sort_order"), 0),
-        )
+    flash("Informe o nome da categoria.", "error")
+elif max_choices > 0 and min_choices > max_choices:
+    flash(
+        "A quantidade mínima não pode ser maior que a quantidade máxima.",
+        "error",
+    )
+else:
+category = MenuCategory(
+    name=name,
+    description=request.form.get("description", "").strip() or None,
+    selection_help=request.form.get("selection_help", "").strip() or None,
+    min_choices=max(
+        0,
+        safe_int(request.form.get("min_choices"), 0),
+    ),
+    max_choices=max(
+        0,
+        safe_int(request.form.get("max_choices"), 0),
+    ),
+    active=request.form.get("active") == "on",
+    sort_order=safe_int(request.form.get("sort_order"), 0),
+)
         db.session.add(category)
         db.session.commit()
         flash("Categoria adicionada.", "success")
@@ -1241,17 +1291,50 @@ def admin_new_category():
 @admin_required
 def admin_save_category(category_id: int):
     category = MenuCategory.query.get_or_404(category_id)
+
     name = request.form.get("name", "").strip()
+
     if not name:
         flash("Informe o nome da categoria.", "error")
     else:
-        category.name = name
-        category.description = request.form.get("description", "").strip() or None
-        category.active = request.form.get("active") == "on"
-        category.sort_order = safe_int(request.form.get("sort_order"), 0)
-        db.session.commit()
-        flash("Categoria atualizada.", "success")
-    return redirect(url_for("admin_menu") + f"#categoria-{category_id}")
+        min_choices = max(
+            0,
+            safe_int(request.form.get("min_choices"), 0),
+        )
+
+        max_choices = max(
+            0,
+            safe_int(request.form.get("max_choices"), 0),
+        )
+
+        if max_choices > 0 and min_choices > max_choices:
+            flash(
+                "A quantidade mínima não pode ser maior que a quantidade máxima.",
+                "error",
+            )
+        else:
+            category.name = name
+            category.description = (
+                request.form.get("description", "").strip() or None
+            )
+            category.selection_help = (
+                request.form.get("selection_help", "").strip() or None
+            )
+            category.min_choices = min_choices
+            category.max_choices = max_choices
+            category.active = request.form.get("active") == "on"
+            category.sort_order = safe_int(
+                request.form.get("sort_order"),
+                0,
+            )
+
+            db.session.commit()
+
+            flash("Categoria atualizada.", "success")
+
+    return redirect(
+        url_for("admin_menu") + f"#categoria-{category_id}"
+    )
 
 
 @app.post("/admin/cardapio/categorias/<int:category_id>/excluir")
