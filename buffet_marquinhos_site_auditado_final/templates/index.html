@@ -267,8 +267,29 @@
             {% for category in menu_categories %}
               {% set active_items = category.items|selectattr('active', 'equalto', true)|list %}
               {% if active_items %}
-              <section class="menu-choice-group">
+              <section
+                class="menu-choice-group"
+                data-category-id="{{ category.id }}"
+                data-category-name="{{ category.name }}"
+                data-min-choices="{{ category.min_choices or 0 }}"
+                data-max-choices="{{ category.max_choices or 0 }}"
+              >
                 <h3>{{ category.name }}</h3>
+                {% if category.selection_help %}
+                  <p class="menu-choice-help">{{ category.selection_help }}</p>
+                {% elif (category.min_choices or 0) > 0 or (category.max_choices or 0) > 0 %}
+                  <p class="menu-choice-help">
+                    {% if (category.min_choices or 0) > 0 and (category.max_choices or 0) > 0 and category.min_choices == category.max_choices %}
+                      Escolha {{ category.min_choices }} opção(ões).
+                    {% elif (category.min_choices or 0) > 0 and (category.max_choices or 0) > 0 %}
+                      Escolha entre {{ category.min_choices }} e {{ category.max_choices }} opção(ões).
+                    {% elif (category.min_choices or 0) > 0 %}
+                      Escolha pelo menos {{ category.min_choices }} opção(ões).
+                    {% else %}
+                      Escolha até {{ category.max_choices }} opção(ões).
+                    {% endif %}
+                  </p>
+                {% endif %}
                 {% for item in active_items %}
                 <label class="menu-choice">
                   <input
@@ -276,10 +297,12 @@
                     name="cardapio"
                     value="{{ item.name }}"
                     data-category="{{ category.name }}"
+                    data-category-id="{{ category.id }}"
                   >
                   <span>{{ item.name }}</span>
                 </label>
                 {% endfor %}
+                <small class="menu-group-status field-help" aria-live="polite"></small>
               </section>
               {% endif %}
             {% endfor %}

@@ -189,8 +189,56 @@ function checkTravel(){
 cityInput?.addEventListener('input',checkTravel);
 
 const menuCheckboxes=[...document.querySelectorAll('input[name="cardapio"]')];
+const menuChoiceGroups=[...document.querySelectorAll('.menu-choice-group')];
 const menuSelectionSummary=document.querySelector('#menu-selection-summary');
 const customMenuInput=document.querySelector('#custom-menu');
+
+function groupRules(group){
+  return {
+    min:Math.max(0,Number.parseInt(group.dataset.minChoices||'0',10)||0),
+    max:Math.max(0,Number.parseInt(group.dataset.maxChoices||'0',10)||0),
+    name:group.dataset.categoryName||group.querySelector('h3')?.textContent?.trim()||'Categoria',
+  };
+}
+
+function groupCheckboxes(group){
+  return [...group.querySelectorAll('input[name="cardapio"]')];
+}
+
+function updateGroupState(group,message=''){
+  const inputs=groupCheckboxes(group);
+  const checked=inputs.filter(input=>input.checked);
+  const {min,max}=groupRules(group);
+  const status=group.querySelector('.menu-group-status');
+
+  // Quando o limite máximo é atingido, as demais opções ficam temporariamente
+  // desabilitadas. Basta desmarcar uma opção para liberar as outras novamente.
+  const atLimit=max>0 && checked.length>=max;
+  inputs.forEach(input=>{
+    input.disabled=atLimit&&!input.checked;
+  });
+
+  if(!status)return;
+  if(message){
+    status.textContent=message;
+    status.className='menu-group-status field-help error';
+    return;
+  }
+
+  if(min>0 && checked.length<min){
+    status.textContent=`${checked.length} selecionada(s). Mínimo: ${min}.`;
+    status.className='menu-group-status field-help';
+  }else if(max>0){
+    status.textContent=`${checked.length} de ${max} selecionada(s).`;
+    status.className='menu-group-status field-help success';
+  }else if(checked.length){
+    status.textContent=`${checked.length} selecionada(s).`;
+    status.className='menu-group-status field-help success';
+  }else{
+    status.textContent='';
+    status.className='menu-group-status field-help';
+  }
+}
 
 function selectedMenuByCategory(){
   const groups=new Map();
@@ -203,21 +251,66 @@ function selectedMenuByCategory(){
 }
 
 function updateMenuSummary(){
+  menuChoiceGroups.forEach(group=>updateGroupState(group));
   const count=menuCheckboxes.filter(input=>input.checked).length;
   if(!menuSelectionSummary)return;
   menuSelectionSummary.textContent=count
     ? `${count} opção(ões) selecionada(s).`
-    : 'Nenhuma opção marcada. Você pode enviar assim mesmo e pedir orientação.';
+    : 'Nenhuma opção marcada. Você pode enviar assim mesmo quando não houver quantidade mínima configurada.';
   menuSelectionSummary.className=`field-help ${count?'success':''}`;
 }
 
-menuCheckboxes.forEach(input=>input.addEventListener('change',updateMenuSummary));
+function validateMenuSelection(){
+  for(const group of menuChoiceGroups){
+    const inputs=groupCheckboxes(group);
+    const count=inputs.filter(input=>input.checked).length;
+    const {min,max,name}=groupRules(group);
+    let message='';
+    if(min>0 && count<min){
+      message=`Em ${name}, escolha pelo menos ${min} opção(ões).`;
+    }else if(max>0 && count>max){
+      message=`Em ${name}, escolha no máximo ${max} opção(ões).`;
+    }
+    if(message){
+      updateGroupState(group,message);
+      group.scrollIntoView({behavior:'smooth',block:'center'});
+      return false;
+    }
+  }
+  return true;
+}
+
+menuCheckboxes.forEach(input=>input.addEventListener('change',()=>{
+  const group=input.closest('.menu-choice-group');
+  if(group){
+    const inputs=groupCheckboxes(group);
+    const {max}=groupRules(group);
+    const checked=inputs.filter(item=>item.checked);
+    if(max>0 && checked.length>max){
+      input.checked=false;
+      updateGroupState(group,`Você pode escolher no máximo ${max} opção(ões) nesta categoria.`);
+    }else{
+      updateGroupState(group);
+    }
+  }
+  updateMenuSummary();
+}));
+
 document.querySelector('#select-menu-all')?.addEventListener('click',()=>{
-  menuCheckboxes.forEach(input=>{input.checked=true});
+  menuChoiceGroups.forEach(group=>{
+    const inputs=groupCheckboxes(group);
+    const {max}=groupRules(group);
+    inputs.forEach((input,index)=>{
+      input.checked=max>0?index<max:true;
+      input.disabled=false;
+    });
+    updateGroupState(group);
+  });
   updateMenuSummary();
 });
+
 document.querySelector('#clear-menu-all')?.addEventListener('click',()=>{
-  menuCheckboxes.forEach(input=>{input.checked=false});
+  menuCheckboxes.forEach(input=>{input.checked=false;input.disabled=false});
   updateMenuSummary();
 });
 updateMenuSummary();
@@ -225,6 +318,7 @@ updateMenuSummary();
 const form=document.querySelector('#orcamento-form');
 form?.addEventListener('submit',async e=>{
  e.preventDefault();
+ if(!validateMenuSelection())return;
  if(budgetDate?.value && !selectedAvailability) await checkBudgetDate();
  // Mesmo quando a agenda aparece como lotada ou indisponível, a solicitação
  // pode ser enviada para que a equipe avalie alternativas de atendimento.

@@ -46,6 +46,9 @@ checks = {
     "Painel de equipe": '@app.get("/admin/equipe")',
     "Painel de cardápio": '@app.get("/admin/cardapio")',
     "Painel de galeria": '@app.get("/admin/galeria")',
+    "Orientação por categoria": 'selection_help',
+    "Mínimo por categoria": 'min_choices',
+    "Máximo por categoria": 'max_choices',
 }
 for label, value in checks.items():
     if value not in app_text and value not in public:

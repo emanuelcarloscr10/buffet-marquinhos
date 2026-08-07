@@ -1,0 +1,18 @@
+BUFFET DO MARQUINHOS — CORREÇÕES DE 07/08/2026
+
+1. Corrigida a implementação da personalização das categorias do cardápio.
+2. Adicionados ao painel administrativo:
+   - orientação para escolha;
+   - quantidade mínima de opções;
+   - quantidade máxima de opções.
+3. Adicionada atualização automática do banco de dados existente no Render para os novos campos.
+4. O montador de cardápio do site agora respeita os limites configurados por categoria.
+5. O cliente recebe orientação visual e não consegue enviar o orçamento se faltar uma seleção mínima obrigatória.
+6. O botão "Selecionar tudo" respeita os máximos definidos em cada categoria.
+7. Mantidos o WhatsApp, agenda, galeria, equipe, fotos e demais conteúdos já existentes no projeto enviado.
+8. app.py compilado sem erro de sintaxe; templates Jinja e JavaScript validados; auditoria estática aprovada.
+
+Uso dos limites:
+- 0 no mínimo = não exige seleção.
+- 0 no máximo = sem limite.
+- Exemplo: mínimo 1 e máximo 1 = cliente deve escolher exatamente uma opção.

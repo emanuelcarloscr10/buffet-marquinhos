@@ -10,8 +10,11 @@
     <h2>Adicionar categoria</h2>
     <form method="post" action="{{ url_for('admin_new_category') }}" class="admin-form menu-category-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <label>Nome<input name="name" placeholder="Ex.: Bebidas" required></label>
-      <label>Descrição opcional<input name="description"></label>
+      <label>Nome<input name="name" placeholder="Ex.: Lasanhas" required></label>
+      <label>Descrição opcional<input name="description" placeholder="Texto exibido também no cardápio"></label>
+      <label>Orientação para escolha<input name="selection_help" placeholder="Ex.: Escolha 1 sabor"></label>
+      <label>Quantidade mínima<input type="number" name="min_choices" min="0" value="0"><small>0 = não exigir mínimo</small></label>
+      <label>Quantidade máxima<input type="number" name="max_choices" min="0" value="0"><small>0 = sem limite</small></label>
       <label>Ordem<input type="number" name="sort_order" value="10"></label>
       <label class="checkbox-label"><input type="checkbox" name="active" checked> Mostrar no site</label>
       <button class="btn btn-gold" type="submit">Adicionar categoria</button>
@@ -26,6 +29,9 @@
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <label>Categoria<input name="name" value="{{ category.name }}" required></label>
           <label>Descrição<input name="description" value="{{ category.description or '' }}"></label>
+          <label>Orientação para escolha<input name="selection_help" value="{{ category.selection_help or '' }}" placeholder="Ex.: Escolha 1 opção"></label>
+          <label>Quantidade mínima<input type="number" name="min_choices" min="0" value="{{ category.min_choices or 0 }}"><small>0 = não exigir mínimo</small></label>
+          <label>Quantidade máxima<input type="number" name="max_choices" min="0" value="{{ category.max_choices or 0 }}"><small>0 = sem limite</small></label>
           <label>Ordem<input type="number" name="sort_order" value="{{ category.sort_order }}"></label>
           <label class="checkbox-label"><input type="checkbox" name="active" {% if category.active %}checked{% endif %}> Mostrar no site</label>
           <button class="btn btn-outline" type="submit">Salvar categoria</button>
