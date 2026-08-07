@@ -1309,11 +1309,16 @@ def admin_delete_category(category_id: int):
     return redirect(url_for("admin_menu"))
 
 
-@app.post("/admin/cardapio/itens/novo")
+@app.post("/admin/cardapio/categorias/<int:category_id>/itens/novo")
 @admin_required
-def admin_new_menu_item():
-    category_id = safe_int(request.form.get("category_id"))
-    category = MenuCategory.query.get_or_404(category_id)
+def admin_new_menu_item(category_id: int):
+    # O ID da categoria vem na própria URL. Isso evita que o formulário
+    # perca ou envie um category_id incorreto e termine em um 404 genérico.
+    category = db.session.get(MenuCategory, category_id)
+    if category is None:
+        flash("A categoria selecionada não foi encontrada. Atualize a página e tente novamente.", "error")
+        return redirect(url_for("admin_menu"))
+
     name = request.form.get("name", "").strip()
     if not name:
         flash("Informe o nome do item.", "error")

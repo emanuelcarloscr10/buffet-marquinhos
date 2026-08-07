@@ -16,3 +16,8 @@ Uso dos limites:
 - 0 no mínimo = não exige seleção.
 - 0 no máximo = sem limite.
 - Exemplo: mínimo 1 e máximo 1 = cliente deve escolher exatamente uma opção.
+
+Correção adicional (07/08/2026):
+- Corrigido o cadastro de novas opções do cardápio no painel administrativo.
+- O ID da categoria agora é enviado na própria URL da ação, evitando erro 404 ao clicar em “Adicionar”.
+- Caso a categoria não exista mais, o painel volta ao cardápio com uma mensagem clara em vez de exibir uma página 404 genérica.
