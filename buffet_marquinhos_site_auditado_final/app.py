@@ -1258,7 +1258,7 @@ max_choices = max(
     safe_int(request.form.get("max_choices"), 0),
 )
     
-    if not name:
+if not name:
     flash("Informe o nome da categoria.", "error")
 elif max_choices > 0 and min_choices > max_choices:
     flash(
