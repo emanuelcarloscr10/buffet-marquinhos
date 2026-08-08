@@ -15,10 +15,19 @@
   <section class="admin-panel menu-admin-help">
     <h2>Como funciona</h2>
     <div class="menu-mode-guide">
-      <div><strong>Somente informativa</strong><span>Mostra os itens sem caixa de seleção. Ideal para churrasco, saladas e itens inclusos.</span></div>
-      <div><strong>Escolha única</strong><span>O cliente escolhe exatamente uma opção. Ideal para massas, strogonoff e lasanha.</span></div>
+      <div><strong>Somente informativa</strong><span>Mostra os itens sem caixa de seleção. Ideal para arroz branco, churrasco, saladas e itens inclusos.</span></div>
+      <div><strong>Escolha única</strong><span>O cliente escolhe exatamente uma opção. Ideal para entradas, arroz especial, acompanhamento especial, strogonoff e lasanha.</span></div>
       <div><strong>Múltipla escolha</strong><span>Permite definir limites. Em sobremesas, use “3 por 100 convidados”. O campo “Quando aparece” liga a categoria ao pacote com entrada ou sobremesa.</span></div>
     </div>
+  </section>
+
+  <section class="admin-panel">
+    <h2>Aplicar estrutura recomendada</h2>
+    <p>Se quiser voltar para o modelo organizado do Buffet do Marquinhos, use este botão. Ele recria o cardápio com: entrada (escolha 1), arroz especial (escolha 1), acompanhamento especial (escolha 1), strogonoff (escolha 1), lasanha (escolha 1), sobremesas (até 3 por 100 convidados) e mantém churrasco, saladas, arroz branco e itens inclusos apenas como informativos.</p>
+    <form method="post" action="{{ url_for('admin_apply_recommended_menu') }}" onsubmit="return confirm('Aplicar a estrutura recomendada irá substituir as categorias e itens atuais do cardápio. Deseja continuar?')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-gold" type="submit">Aplicar estrutura recomendada</button>
+    </form>
   </section>
 
   <section class="admin-panel">

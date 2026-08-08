@@ -750,6 +750,157 @@ def _add_item_if_missing(category: MenuCategory, name: str, sort_order: int) -> 
         )
 
 
+def recommended_menu_structure() -> list[dict[str, object]]:
+    return [
+        {
+            "name": "Entradas",
+            "description": "Disponíveis nos pacotes com entrada.",
+            "mode": "single",
+            "feature": "entry",
+            "help": "Escolha 1 entrada.",
+            "min": 1,
+            "max": 1,
+            "items": [
+                "Risoto de alho poró",
+                "Escondidinho de carne seca com aipim",
+            ],
+        },
+        {
+            "name": "Arroz branco",
+            "description": "Já faz parte de todos os eventos; não precisa selecionar.",
+            "mode": "info",
+            "items": ["Arroz branco"],
+        },
+        {
+            "name": "Arroz especial",
+            "description": "Além do arroz branco, escolha 1 opção especial.",
+            "mode": "single",
+            "help": "Escolha 1 opção.",
+            "min": 1,
+            "max": 1,
+            "items": ["Arroz à grega", "Arroz campeiro", "Arroz vegetariano"],
+        },
+        {
+            "name": "Acompanhamento especial",
+            "description": "Escolha entre aipim com bacon e queijo ou uma das opções de massa.",
+            "mode": "single",
+            "help": "Escolha 1 opção.",
+            "min": 1,
+            "max": 1,
+            "items": [
+                "Aipim com bacon e queijo",
+                "Massa alho e óleo",
+                "Massa carbonara",
+                "Massa ao molho sugo",
+            ],
+        },
+        {
+            "name": "Strogonoff",
+            "description": "Escolha o sabor do strogonoff.",
+            "mode": "single",
+            "help": "Escolha 1 sabor.",
+            "min": 1,
+            "max": 1,
+            "items": ["Carne", "Frango"],
+        },
+        {
+            "name": "Lasanha",
+            "description": "Escolha o sabor da lasanha.",
+            "mode": "single",
+            "help": "Escolha 1 sabor.",
+            "min": 1,
+            "max": 1,
+            "items": ["Frango", "Bolonhesa", "Vegetariana", "Quatro queijos"],
+        },
+        {
+            "name": "Churrasco",
+            "description": "Seleção padrão do buffet: as variedades abaixo fazem parte do serviço e não precisam ser escolhidas.",
+            "mode": "info",
+            "items": [
+                "Carne de gado (entrecot, vazio e maminha)",
+                "Carne suína (costelinha)",
+                "Frango (sobrecoxa)",
+                "Salsichão tipo colonial",
+                "Abacaxi com canela",
+            ],
+        },
+        {
+            "name": "Saladas",
+            "description": "Servimos 8 variedades: folhas, legumes e vinagrete.",
+            "mode": "info",
+            "items": ["8 variedades de saladas", "Folhas", "Legumes", "Vinagrete"],
+        },
+        {
+            "name": "Sobremesas",
+            "description": "Disponíveis nos pacotes com sobremesa.",
+            "mode": "multiple",
+            "feature": "dessert",
+            "help": "Escolha até 3 opções a cada 100 convidados.",
+            "min": 0,
+            "max": 0,
+            "per100": 3,
+            "items": [
+                "Mousse de maracujá",
+                "Mousse de uva",
+                "Mousse de Ninho",
+                "Bombom de travessa",
+                "Doce sensação",
+                "Manjar de ameixa",
+                "Abacaxi com creme branco",
+                "Pavê de Sonho de Valsa",
+                "Torta de bolacha",
+            ],
+        },
+        {
+            "name": "Incluso",
+            "description": "Itens incluídos no serviço; não é necessário selecionar.",
+            "mode": "info",
+            "items": ["Taças", "Pratos", "Talheres em inox", "Guardanapos de papel"],
+        },
+    ]
+
+
+def apply_recommended_menu_structure() -> None:
+    for category in MenuCategory.query.order_by(MenuCategory.sort_order, MenuCategory.id).all():
+        db.session.delete(category)
+    db.session.flush()
+
+    for category_order, data in enumerate(recommended_menu_structure(), start=1):
+        category = MenuCategory(
+            name=str(data["name"]),
+            description=data.get("description"),
+            selection_mode=str(data.get("mode", "info")),
+            selection_help=data.get("help"),
+            package_feature=str(data.get("feature", "always")),
+            min_choices=int(data.get("min", 0) or 0),
+            max_choices=int(data.get("max", 0) or 0),
+            choices_per_100=int(data.get("per100", 0) or 0),
+            active=True,
+            sort_order=category_order * 10,
+        )
+        db.session.add(category)
+        db.session.flush()
+        for item_order, item_name in enumerate(data.get("items", []), start=1):
+            db.session.add(
+                MenuItem(
+                    category_id=category.id,
+                    name=str(item_name),
+                    active=True,
+                    sort_order=item_order,
+                )
+            )
+
+    site = SiteContent.query.first()
+    if site:
+        site.menu_eyebrow = "Cardápio do buffet"
+        site.menu_title = "Escolha apenas o que realmente varia no seu evento."
+        site.menu_description = (
+            "O cliente seleciona somente as opções que mudam no cardápio, como entrada, arroz especial, "
+            "acompanhamento, strogonoff, lasanha e sobremesas. Churrasco, saladas, arroz branco e os itens "
+            "inclusos já seguem o padrão do buffet."
+        )
+
+
 def apply_data_migrations() -> None:
     """Converte com cuidado bancos antigos para a estrutura atual do cardápio.
 
@@ -763,7 +914,7 @@ def apply_data_migrations() -> None:
         db.session.flush()
 
     version = current.menu_structure_version or 0
-    if version >= 3:
+    if version >= 4:
         db.session.commit()
         return
 
@@ -901,6 +1052,14 @@ def apply_data_migrations() -> None:
         sobremesas.package_feature = "dessert"
 
     current.menu_structure_version = 3
+    db.session.flush()
+
+    # Versão 4: aplica a estrutura final desejada para o Buffet do Marquinhos,
+    # separando claramente o que é fixo do que o cliente realmente escolhe.
+    if (current.menu_structure_version or 0) < 4:
+        apply_recommended_menu_structure()
+        current.menu_structure_version = 4
+
     db.session.commit()
 
 
@@ -1788,6 +1947,24 @@ def admin_menu():
         active_page="cardapio",
         **admin_template_context(),
     )
+
+
+@app.post("/admin/cardapio/aplicar-estrutura-recomendada")
+@admin_required
+def admin_apply_recommended_menu():
+    try:
+        apply_recommended_menu_structure()
+        current = Setting.query.first()
+        if not current:
+            current = Setting(max_events_per_day=2, bootstrap_version=1, menu_structure_version=4)
+            db.session.add(current)
+        current.menu_structure_version = max(current.menu_structure_version or 0, 4)
+        db.session.commit()
+        flash("Estrutura recomendada do cardápio aplicada com sucesso.", "success")
+    except Exception as exc:
+        db.session.rollback()
+        flash(str(exc) or "Não foi possível aplicar a estrutura recomendada.", "error")
+    return redirect(url_for("admin_menu"))
 
 
 @app.post("/admin/cardapio/categorias/nova")
