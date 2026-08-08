@@ -1,68 +1,45 @@
-# Guia: domínio e publicação
+# Buffet do Marquinhos — domínio e publicação
 
-## 1. Criar o repositório no GitHub
+O domínio `buffetdomarquinhos.com.br` já está ligado ao serviço `buffet-marquinhos`. Preserve esse mesmo Web Service para esta migração.
 
-1. Entre no GitHub e crie uma conta.
-2. Clique em `New repository`.
-3. Nome sugerido: `buffet-do-marquinhos`.
-4. Abra o repositório e escolha `Add file` > `Upload files`.
-5. Extraia o ZIP no computador e envie todos os arquivos e pastas do projeto.
-6. Confirme em `Commit changes`.
+## Estrutura final
 
-## 2. Publicar no Render
+- GitHub: código.
+- `buffet-marquinhos` no Render: aplicação Flask/Gunicorn.
+- Render Postgres: todos os dados administrativos.
+- Persistent Disk `/var/data`: uploads feitos pelo painel.
+- Domínio: `buffetdomarquinhos.com.br`.
 
-1. Crie uma conta no Render usando o GitHub.
-2. No painel, clique em `New` > `Blueprint`.
-3. Escolha o repositório `buffet-do-marquinhos`.
-4. O Render reconhecerá o arquivo `render.yaml`.
-5. Defina a variável `ADMIN_PASSWORD` com uma senha forte e guarde-a.
-6. Confirme a publicação.
-7. Aguarde o status `Live`.
-8. Abra o endereço fornecido pelo Render.
-9. Acrescente `/admin` ao final para entrar no painel.
+## Importante sobre plano pago
 
-Exemplo temporário:
+Para usar Persistent Disk, o **Instance Type do Web Service** precisa ser pago (por exemplo Starter). Isso é diferente do plano do workspace/conta.
 
-- Site: `https://buffet-do-marquinhos.onrender.com`
-- Painel: `https://buffet-do-marquinhos.onrender.com/admin`
+## Variáveis de produção
 
-## 3. Registrar um domínio `.com.br`
+No Web Service:
 
-1. Entre no Registro.br.
-2. Pesquise o nome desejado, por exemplo `buffetdomarquinhos.com.br`.
-3. Somente prossiga se aparecer como disponível.
-4. Crie ou entre na conta do titular.
-5. Informe CPF ou CNPJ e os dados solicitados.
-6. O Registro.br informa atualmente o valor de R$ 40,00 por ano; confirme o preço exibido antes de pagar.
-7. Pague o período escolhido.
+- `DATABASE_URL` = Internal Database URL do Render Postgres;
+- `SECRET_KEY` = segredo longo e aleatório;
+- `ADMIN_PASSWORD` = senha administrativa forte;
+- `UPLOAD_ROOT=/var/data/uploads`;
+- `BUSINESS_TIMEZONE=America/Sao_Paulo`.
 
-O registro do domínio e a hospedagem são serviços diferentes. O domínio é comprado no Registro.br; o site continua hospedado no Render.
+Não coloque os valores secretos no GitHub.
 
-## 4. Ligar o domínio ao Render
+## Atualizar sem perder cadastros
 
-1. No Render, abra o serviço do site.
-2. Entre em `Settings` > `Custom Domains`.
-3. Adicione o domínio principal, por exemplo `buffetdomarquinhos.com.br`. O Render também prepara a versão com `www` e o redirecionamento correspondente.
-4. O Render mostrará os registros DNS necessários.
-5. No Registro.br, abra o domínio e entre em `DNS` > `Editar Zona`.
-6. Remova registros `AAAA` conflitantes, caso existam, e copie exatamente os registros mostrados pelo Render.
-7. Volte ao Render e clique em `Verify`.
+Depois da migração e do teste de persistência:
 
-A atualização do DNS pode levar algum tempo. Depois da confirmação, o Render ativa HTTPS automaticamente.
+```bash
+git add .
+git commit -m "Descrição da alteração"
+git push
+```
 
-## 5. Uso diário depois de publicado
+O código é redeployado; os dados permanecem no PostgreSQL e os uploads permanecem no Persistent Disk.
 
-- Agenda: `seu-dominio.com.br/admin`
-- Textos e preços: menu `Textos e preços`
-- Pratos: menu `Cardápio`
-- Fotos e capa: menu `Fotos`
+## Verificação após deploy
 
-Tudo que for salvo no painel aparece no site público.
+Abra `/health` e confirme `status: ok`, `database: PostgreSQL`, `persistent: true` e o fuso de São Paulo. Depois abra `/admin` e confirme **Banco: PostgreSQL · Persistente**.
 
-
-## Versão pronta para publicação
-
-- Aviso: 3 opções de sobremesas a cada 100 convidados.
-- Aviso editável pelo painel em Textos e preços.
-- Painel administrativo completo em `/admin`.
-- Guia detalhado disponível em `PASSO_A_PASSO_PUBLICAR_E_USAR_ADMIN.md`.
+O roteiro completo está em `MIGRACAO_RENDER_PRODUCAO.md`.

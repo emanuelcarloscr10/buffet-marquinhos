@@ -122,6 +122,8 @@
           <label>Ordem<input name="sort_order" type="number" value="{{ package.sort_order }}"></label>
           <label>Selo opcional<input name="badge" value="{{ package.badge or '' }}" placeholder="Ex.: Completo"></label>
           <label class="wide">Descrição<textarea name="description">{{ package.description }}</textarea></label>
+          <label class="checkbox-label"><input type="checkbox" name="includes_entry" {% if package.includes_entry %}checked{% endif %}> Inclui entrada</label>
+          <label class="checkbox-label"><input type="checkbox" name="includes_dessert" {% if package.includes_dessert %}checked{% endif %}> Inclui sobremesa</label>
           <label class="checkbox-label"><input type="checkbox" name="featured" {% if package.featured %}checked{% endif %}> Destacar este pacote</label>
           <label class="checkbox-label"><input type="checkbox" name="active" {% if package.active %}checked{% endif %}> Mostrar no site</label>
           <button class="btn btn-outline" type="submit">Salvar pacote</button>
@@ -143,6 +145,8 @@
         <label>Ordem<input name="sort_order" type="number" value="10"></label>
         <label>Selo opcional<input name="badge"></label>
         <label class="wide">Descrição<textarea name="description"></textarea></label>
+        <label class="checkbox-label"><input type="checkbox" name="includes_entry"> Inclui entrada</label>
+        <label class="checkbox-label"><input type="checkbox" name="includes_dessert"> Inclui sobremesa</label>
         <label class="checkbox-label"><input type="checkbox" name="featured"> Destacar este pacote</label>
         <label class="checkbox-label"><input type="checkbox" name="active" checked> Mostrar no site</label>
         <button class="btn btn-gold" type="submit">Adicionar pacote</button>

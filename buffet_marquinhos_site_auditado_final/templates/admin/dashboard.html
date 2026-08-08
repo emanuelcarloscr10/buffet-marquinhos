@@ -5,7 +5,12 @@
 <main class="admin-container admin-main">
   <div class="admin-heading">
     <div><div class="eyebrow">Painel administrativo</div><h1>Agenda do Buffet</h1><p>Cadastre os eventos. A disponibilidade pública é atualizada automaticamente.</p></div>
-    <div class="capacity-badge">Limite atual: <strong>{{ current_settings.max_events_per_day }} eventos/dia</strong></div>
+    <div class="dashboard-badges">
+      <div class="capacity-badge">Limite atual: <strong>{{ current_settings.max_events_per_day }} eventos/dia</strong></div>
+      <div class="storage-badge {{ 'persistent' if storage_status.persistent else 'warning' }}">
+        Banco: <strong>{{ storage_status.kind }}</strong> · {{ 'Persistente' if storage_status.persistent else 'ATENÇÃO: não persistente' }}
+      </div>
+    </div>
   </div>
 
   {% include "admin/_flash.html" %}

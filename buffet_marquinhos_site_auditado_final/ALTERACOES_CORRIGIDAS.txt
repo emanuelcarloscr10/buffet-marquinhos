@@ -1,23 +1,70 @@
-BUFFET DO MARQUINHOS — CORREÇÕES DE 07/08/2026
+BUFFET DO MARQUINHOS — REVISÃO DE PRODUÇÃO — 08/08/2026
 
-1. Corrigida a implementação da personalização das categorias do cardápio.
-2. Adicionados ao painel administrativo:
-   - orientação para escolha;
-   - quantidade mínima de opções;
-   - quantidade máxima de opções.
-3. Adicionada atualização automática do banco de dados existente no Render para os novos campos.
-4. O montador de cardápio do site agora respeita os limites configurados por categoria.
-5. O cliente recebe orientação visual e não consegue enviar o orçamento se faltar uma seleção mínima obrigatória.
-6. O botão "Selecionar tudo" respeita os máximos definidos em cada categoria.
-7. Mantidos o WhatsApp, agenda, galeria, equipe, fotos e demais conteúdos já existentes no projeto enviado.
-8. app.py compilado sem erro de sintaxe; templates Jinja e JavaScript validados; auditoria estática aprovada.
+OBJETIVO
+Estabilizar o site para uso empresarial: impedir nova perda de dados, corrigir o orçamento via WhatsApp no celular, aplicar as regras reais do cardápio e endurecer o painel administrativo.
 
-Uso dos limites:
-- 0 no mínimo = não exige seleção.
-- 0 no máximo = sem limite.
-- Exemplo: mínimo 1 e máximo 1 = cliente deve escolher exatamente uma opção.
+1. PERSISTÊNCIA
+- Produção preparada para Render Postgres.
+- Agenda, datas bloqueadas, textos, preços, cardápio, configurações, equipe e metadados ficam no PostgreSQL.
+- Uploads do painel ficam em /var/data/uploads, usando Persistent Disk.
+- Em Render + SQLite, o painel bloqueia gravações propositalmente.
+- O painel informa se o banco é PostgreSQL/Persistente.
+- Seeds/migrações são versionados para não recriar itens que o administrador excluiu nem sobrescrever alterações após restart.
 
-Correção adicional (07/08/2026):
-- Corrigido o cadastro de novas opções do cardápio no painel administrativo.
-- O ID da categoria agora é enviado na própria URL da ação, evitando erro 404 ao clicar em “Adicionar”.
-- Caso a categoria não exista mais, o painel volta ao cardápio com uma mensagem clara em vez de exibir uma página 404 genérica.
+2. CARDÁPIO CONFORME O BUFFET
+- Pacote define com/sem entrada e com/sem sobremesa.
+- Entrada: informativa, sem escolha prato por prato.
+- Massas: escolha única (1 entre as opções cadastradas).
+- Strogonoff: escolha única (Carne OU Frango).
+- Lasanha: escolha única de sabor.
+- Sobremesas: múltipla escolha com 3 opções a cada 100 convidados.
+- Churrasco: informativo, sem seleção.
+- Saladas: informativo, com oito variedades incluindo folhas, legumes e vinagrete, sem seleção.
+- Incluso: informativo, sem seleção.
+- Removido “Selecionar tudo”.
+- O painel permite definir Tipo da categoria e Quando aparece (sempre / pacote com entrada / pacote com sobremesa).
+
+3. WHATSAPP NO CELULAR
+- Envio final por https://wa.me/.
+- Nenhum fetch/await entre o toque em Enviar e a navegação para o WhatsApp.
+- Navegação feita diretamente no mesmo gesto do usuário.
+- Link alternativo aparece caso o navegador não abra o WhatsApp automaticamente.
+- Consulta de disponibilidade ocorre antes, quando a data é escolhida, sem bloquear o orçamento se a API estiver momentaneamente indisponível.
+
+4. AGENDA
+- Consulta pública sem cache.
+- Fuso do negócio fixado em America/Sao_Paulo, evitando considerar a data do Brasil como passada por causa do UTC do servidor.
+- Reservado e Confirmado contam para capacidade; Cancelado não ocupa vaga.
+- Datas bloqueadas continuam suportadas.
+- Em PostgreSQL, a validação da capacidade usa bloqueio transacional para reduzir corrida entre cadastros simultâneos.
+- Botões POST do painel são desabilitados imediatamente após envio para reduzir duplo cadastro por duplo clique/toque.
+
+5. SEGURANÇA/ROBUSTEZ
+- CSRF em todos os formulários administrativos.
+- SECRET_KEY e ADMIN_PASSWORD obrigatórias no Render.
+- Cookies administrativos HttpOnly, SameSite e Secure em produção.
+- Headers de segurança, HSTS e Content-Security-Policy.
+- Painel sem cache.
+- Tratamento de erro do banco com rollback.
+- Erro de CSRF/400 recebe resposta administrativa amigável.
+- Upload limitado por tamanho e por resolução (até 40 megapixels), com validação real da imagem e conversão para WEBP.
+- Troca/exclusão de arquivos é coordenada com o commit do banco para reduzir referências quebradas.
+
+6. SAÚDE E DEPLOY
+- /health testa o banco e informa tipo, persistência e fuso.
+- render.yaml preparado para Web Service Starter, Postgres Basic e Persistent Disk.
+- psycopg incluído nas dependências.
+- Gunicorn configurado com 1 worker e threads para evitar migrações concorrentes na inicialização.
+
+7. VERIFICAÇÕES DESTA REVISÃO
+- app.py compilado sem erro de sintaxe.
+- Todos os templates Jinja analisados.
+- JavaScript principal e administrativo verificados pelo Node.
+- 44 imagens estáticas abertas e validadas.
+- Auditoria de rotas administrativas, autenticação, CSRF, endpoints, âncoras, IDs HTML, rotas duplicadas, regras do cardápio, persistência, configuração Render, uploads e fluxo do WhatsApp.
+
+LIMITAÇÃO DO AMBIENTE DE REVISÃO
+O ambiente de auditoria não possui Flask/Flask-SQLAlchemy instaláveis pela rede, portanto não foi possível executar o servidor Flask completo nem um navegador real iPhone/Android daqui. A verificação final de integração deve ser feita no Render depois do deploy, conforme MIGRACAO_RENDER_PRODUCAO.md.
+
+IMPORTANTE
+Os eventos que já desapareceram do SQLite efêmero não são recuperados automaticamente pelo PostgreSQL novo. Não recadastre a agenda real antes de confirmar “Banco: PostgreSQL · Persistente” e realizar o teste de persistência.

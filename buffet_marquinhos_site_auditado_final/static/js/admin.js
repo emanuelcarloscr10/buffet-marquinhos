@@ -31,3 +31,22 @@ document.addEventListener('keydown',event=>{
 window.addEventListener('resize',()=>{
   if(window.innerWidth>820)setAdminMenu(false);
 },{passive:true});
+
+// Evita envios duplicados por duplo clique/toque no painel. Isso é especialmente
+// importante em cadastros de agenda, onde um segundo POST poderia criar um evento
+// repetido antes da primeira navegação terminar.
+document.querySelectorAll('form[method="post"], form[method="POST"]').forEach(form=>{
+  form.addEventListener('submit',event=>{
+    if(event.defaultPrevented)return;
+    const submitter=event.submitter;
+    if(!submitter)return;
+    // O evento submit só dispara depois que a validação HTML passa. Desabilitar
+    // imediatamente evita que um segundo toque envie outro POST antes da navegação.
+    submitter.disabled=true;
+    submitter.setAttribute('aria-busy','true');
+    if(!submitter.dataset.originalLabel)submitter.dataset.originalLabel=submitter.textContent||'';
+    if(!submitter.classList.contains('text-danger')&&!submitter.classList.contains('danger-button')){
+      submitter.textContent='Salvando...';
+    }
+  });
+});

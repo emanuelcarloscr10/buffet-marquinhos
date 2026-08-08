@@ -3,19 +3,45 @@
 {% block body %}
 {% include "admin/_topbar.html" %}
 <main class="admin-container admin-main">
-  <div class="admin-heading"><div><div class="eyebrow">Edição do site</div><h1>Cardápio</h1><p>Adicione, altere, esconda ou exclua categorias e opções.</p></div></div>
+  <div class="admin-heading">
+    <div>
+      <div class="eyebrow">Edição do site</div>
+      <h1>Cardápio</h1>
+      <p>Defina o que é apenas informativo e o que o cliente realmente precisa escolher no orçamento.</p>
+    </div>
+  </div>
   {% include "admin/_flash.html" %}
+
+  <section class="admin-panel menu-admin-help">
+    <h2>Como funciona</h2>
+    <div class="menu-mode-guide">
+      <div><strong>Somente informativa</strong><span>Mostra os itens sem caixa de seleção. Ideal para churrasco, saladas e itens inclusos.</span></div>
+      <div><strong>Escolha única</strong><span>O cliente escolhe exatamente uma opção. Ideal para massas, strogonoff e lasanha.</span></div>
+      <div><strong>Múltipla escolha</strong><span>Permite definir limites. Em sobremesas, use “3 por 100 convidados”. O campo “Quando aparece” liga a categoria ao pacote com entrada ou sobremesa.</span></div>
+    </div>
+  </section>
 
   <section class="admin-panel">
     <h2>Adicionar categoria</h2>
     <form method="post" action="{{ url_for('admin_new_category') }}" class="admin-form menu-category-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <label>Nome<input name="name" placeholder="Ex.: Lasanhas" required></label>
-      <label>Descrição opcional<input name="description" placeholder="Texto exibido também no cardápio"></label>
-      <label>Orientação para escolha<input name="selection_help" placeholder="Ex.: Escolha 1 sabor"></label>
-      <label>Quantidade mínima<input type="number" name="min_choices" min="0" value="0"><small>0 = não exigir mínimo</small></label>
-      <label>Quantidade máxima<input type="number" name="max_choices" min="0" value="0"><small>0 = sem limite</small></label>
-      <label>Ordem<input type="number" name="sort_order" value="10"></label>
+      <label>Nome<input name="name" placeholder="Ex.: Massas" required></label>
+      <label>Tipo
+        <select name="selection_mode">
+          {% for value, label in selection_modes.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Quando aparece
+        <select name="package_feature">
+          {% for value, label in package_features.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Ordem<input type="number" name="sort_order" value="100"></label>
+      <label class="wide">Descrição opcional<input name="description" placeholder="Texto mostrado no cardápio"></label>
+      <label class="wide">Orientação para escolha<input name="selection_help" placeholder="Ex.: Escolha 1 sabor"></label>
+      <label>Quantidade mínima<small>Usado em múltipla escolha.</small><input type="number" name="min_choices" min="0" value="0"></label>
+      <label>Quantidade máxima<small>0 = sem limite fixo.</small><input type="number" name="max_choices" min="0" value="0"></label>
+      <label>Opções a cada 100 convidados<small>Ex.: 3 para sobremesas. 0 = desativado.</small><input type="number" name="choices_per_100" min="0" value="0"></label>
       <label class="checkbox-label"><input type="checkbox" name="active" checked> Mostrar no site</label>
       <button class="btn btn-gold" type="submit">Adicionar categoria</button>
     </form>
@@ -28,11 +54,26 @@
         <form method="post" action="{{ url_for('admin_save_category', category_id=category.id) }}" class="admin-form category-edit-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <label>Categoria<input name="name" value="{{ category.name }}" required></label>
-          <label>Descrição<input name="description" value="{{ category.description or '' }}"></label>
-          <label>Orientação para escolha<input name="selection_help" value="{{ category.selection_help or '' }}" placeholder="Ex.: Escolha 1 opção"></label>
-          <label>Quantidade mínima<input type="number" name="min_choices" min="0" value="{{ category.min_choices or 0 }}"><small>0 = não exigir mínimo</small></label>
-          <label>Quantidade máxima<input type="number" name="max_choices" min="0" value="{{ category.max_choices or 0 }}"><small>0 = sem limite</small></label>
+          <label>Tipo
+            <select name="selection_mode">
+              {% for value, label in selection_modes.items() %}
+              <option value="{{ value }}" {% if category.selection_mode == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>Quando aparece
+            <select name="package_feature">
+              {% for value, label in package_features.items() %}
+              <option value="{{ value }}" {% if category.package_feature == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
           <label>Ordem<input type="number" name="sort_order" value="{{ category.sort_order }}"></label>
+          <label class="wide">Descrição<input name="description" value="{{ category.description or '' }}"></label>
+          <label class="wide">Orientação para escolha<input name="selection_help" value="{{ category.selection_help or '' }}" placeholder="Ex.: Escolha 1 opção"></label>
+          <label>Quantidade mínima<small>Ignorado em “informativa” e ajustado para 1 em “escolha única”.</small><input type="number" name="min_choices" min="0" value="{{ category.min_choices or 0 }}"></label>
+          <label>Quantidade máxima<small>0 = sem limite fixo.</small><input type="number" name="max_choices" min="0" value="{{ category.max_choices or 0 }}"></label>
+          <label>Opções a cada 100 convidados<small>Ex.: 3 para sobremesas.</small><input type="number" name="choices_per_100" min="0" value="{{ category.choices_per_100 or 0 }}"></label>
           <label class="checkbox-label"><input type="checkbox" name="active" {% if category.active %}checked{% endif %}> Mostrar no site</label>
           <button class="btn btn-outline" type="submit">Salvar categoria</button>
         </form>

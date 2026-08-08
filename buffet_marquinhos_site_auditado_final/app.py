@@ -5,11 +5,12 @@ import os
 import re
 import secrets
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from functools import wraps
 from pathlib import Path
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import (
     Flask,
@@ -26,29 +27,54 @@ from flask import (
 from flask_sqlalchemy import SQLAlchemy
 from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy import UniqueConstraint, inspect, text
+from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.utils import secure_filename
 
 BASE_DIR = Path(__file__).resolve().parent
 INSTANCE_DIR = BASE_DIR / "instance"
 DEFAULT_DB = "sqlite:///" + str(INSTANCE_DIR / "buffet.db")
-DATABASE_URL = os.getenv("DATABASE_URL", DEFAULT_DB)
+RUNNING_ON_RENDER = os.getenv("RENDER") == "true"
+SECRET_KEY_VALUE = os.getenv("SECRET_KEY", "").strip()
+DATABASE_URL = os.getenv("DATABASE_URL", DEFAULT_DB).strip()
+
+# O Render fornece URLs no formato postgresql://. Explicitamos o driver psycopg 3
+# para não depender de um driver implícito e manter conexões mais previsíveis.
 if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
+elif DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
+
+# Em produção, o site público pode continuar online enquanto o PostgreSQL é
+# configurado. Porém o painel bloqueia qualquer gravação enquanto o banco ainda
+# estiver em SQLite, evitando que o administrador cadastre dados que desaparecerão
+# no próximo deploy/restart.
+PRODUCTION_SECRET_READY = (not RUNNING_ON_RENDER) or bool(SECRET_KEY_VALUE)
+PERSISTENCE_READY = (not RUNNING_ON_RENDER) or DATABASE_URL.startswith("postgresql+")
 
 UPLOAD_ROOT = Path(os.getenv("UPLOAD_ROOT", str(BASE_DIR / "static" / "uploads"))).resolve()
 MAX_UPLOAD_MB = 12
 ALLOWED_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
+MAX_IMAGE_PIXELS = 40_000_000
+
+try:
+    BUSINESS_TZ = ZoneInfo(os.getenv("BUSINESS_TIMEZONE", "America/Sao_Paulo"))
+except ZoneInfoNotFoundError:
+    # Fallback seguro caso a imagem do sistema não traga a base IANA de fusos.
+    BUSINESS_TZ = timezone(timedelta(hours=-3))
 
 app = Flask(__name__)
 app.config.update(
-    SECRET_KEY=os.getenv("SECRET_KEY", "desenvolvimento-troque-esta-chave"),
+    SECRET_KEY=SECRET_KEY_VALUE or "desenvolvimento-troque-esta-chave",
     SQLALCHEMY_DATABASE_URI=DATABASE_URL,
     SQLALCHEMY_TRACK_MODIFICATIONS=False,
+    SQLALCHEMY_ENGINE_OPTIONS={"pool_pre_ping": True, "pool_recycle": 300}
+    if DATABASE_URL.startswith("postgresql+")
+    else {},
     MAX_CONTENT_LENGTH=MAX_UPLOAD_MB * 1024 * 1024,
     PERMANENT_SESSION_LIFETIME=60 * 60 * 12,
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
-    SESSION_COOKIE_SECURE=os.getenv("RENDER") == "true" or os.getenv("HTTPS_ONLY") == "1",
+    SESSION_COOKIE_SECURE=RUNNING_ON_RENDER or os.getenv("HTTPS_ONLY") == "1",
 )
 db = SQLAlchemy(app)
 
@@ -64,11 +90,26 @@ GALLERY_CATEGORIES = {
     "saladas": "Saladas",
     "sobremesas": "Sobremesas",
 }
+MENU_SELECTION_MODES = {
+    "info": "Somente informativa (sem seleção)",
+    "single": "Escolha única (1 opção)",
+    "multiple": "Múltipla escolha",
+}
+MENU_PACKAGE_FEATURES = {
+    "always": "Sempre mostrar",
+    "entry": "Somente em pacotes com entrada",
+    "dessert": "Somente em pacotes com sobremesa",
+}
 
 
 class Setting(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     max_events_per_day = db.Column(db.Integer, nullable=False, default=2)
+    # Garante que os dados de demonstração/padrão sejam inseridos apenas na primeira
+    # inicialização do banco. Exclusões feitas depois pelo administrador são respeitadas.
+    bootstrap_version = db.Column(db.Integer, nullable=False, default=0)
+    # Controla migrações de estrutura do cardápio que precisam ocorrer apenas uma vez.
+    menu_structure_version = db.Column(db.Integer, nullable=False, default=0)
 
 
 class SiteContent(db.Model):
@@ -150,6 +191,8 @@ class PricingPackage(db.Model):
     price = db.Column(db.Numeric(10, 2), nullable=False)
     description = db.Column(db.Text, nullable=False, default="")
     badge = db.Column(db.String(60), nullable=True)
+    includes_entry = db.Column(db.Boolean, nullable=False, default=False)
+    includes_dessert = db.Column(db.Boolean, nullable=False, default=False)
     featured = db.Column(db.Boolean, nullable=False, default=False)
     active = db.Column(db.Boolean, nullable=False, default=True)
     sort_order = db.Column(db.Integer, nullable=False, default=0)
@@ -159,13 +202,16 @@ class MenuCategory(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), nullable=False)
     description = db.Column(db.String(240), nullable=True)
-    # Orientação exibida ao cliente no montador do cardápio, por exemplo:
-    # "Escolha 1 opção" ou "Selecione até 3 sabores".
+    # info = apenas mostra os itens; single = rádio com uma escolha;
+    # multiple = checkboxes com limite configurável.
+    selection_mode = db.Column(db.String(20), nullable=False, default="info")
     selection_help = db.Column(db.String(240), nullable=True)
-    # Zero significa "sem exigência/sem limite". Esses campos permitem que
-    # o painel defina quantas opções o cliente deve/pode escolher por categoria.
+    # Permite vincular a categoria explicitamente ao pacote sem depender do nome.
+    package_feature = db.Column(db.String(20), nullable=False, default="always")
     min_choices = db.Column(db.Integer, nullable=False, default=0)
     max_choices = db.Column(db.Integer, nullable=False, default=0)
+    # Ex.: sobremesas = 3 opções a cada 100 convidados. Zero desativa a regra.
+    choices_per_100 = db.Column(db.Integer, nullable=False, default=0)
     active = db.Column(db.Boolean, nullable=False, default=True)
     sort_order = db.Column(db.Integer, nullable=False, default=0)
     items = db.relationship(
@@ -269,13 +315,12 @@ def default_site_content() -> SiteContent:
             "Eventos realizados fora de Praia Grande poderão ter acréscimo de deslocamento, "
             "calculado conforme a cidade e o local do evento."
         ),
-        menu_eyebrow="Cardápio personalizável",
-        menu_title="Monte uma experiência com a sua cara.",
+        menu_eyebrow="Cardápio do buffet",
+        menu_title="Escolha apenas o que varia no seu evento.",
         menu_description=(
-            "As opções podem ser combinadas conforme o perfil e o tamanho do evento. "
-            "Além do cardápio apresentado, também elaboramos cardápios personalizados "
-            "de acordo com o gosto do cliente, com possibilidade de incluir pratos que "
-            "não estejam no cardápio padrão, mediante consulta e orçamento."
+            "Churrasco, saladas e os itens inclusos seguem o padrão do buffet. "
+            "Nas categorias indicadas, você escolhe apenas a opção desejada, como massa, "
+            "strogonoff, lasanha e sobremesas. Pedidos especiais continuam sujeitos a consulta."
         ),
         availability_eyebrow="Agenda do buffet",
         availability_title="Consulte a disponibilidade.",
@@ -297,8 +342,13 @@ def default_site_content() -> SiteContent:
 
 
 def seed_content() -> None:
-    if not Setting.query.first():
-        db.session.add(Setting(max_events_per_day=2))
+    current_settings = Setting.query.first()
+    if not current_settings:
+        current_settings = Setting(max_events_per_day=2, bootstrap_version=0, menu_structure_version=0)
+        db.session.add(current_settings)
+        db.session.flush()
+
+    first_bootstrap = (current_settings.bootstrap_version or 0) < 1
 
     site = SiteContent.query.first()
     if not site:
@@ -306,8 +356,18 @@ def seed_content() -> None:
         db.session.add(site)
         db.session.flush()
 
-    if site.menu_description == 'As opções podem ser combinadas conforme o perfil e o tamanho do evento.':
-        site.menu_description = 'As opções podem ser combinadas conforme o perfil e o tamanho do evento. Além do cardápio apresentado, também elaboramos cardápios personalizados de acordo com o gosto do cliente, com possibilidade de incluir pratos que não estejam no cardápio padrão, mediante consulta e orçamento.'
+    legacy_menu_descriptions = {
+        "As opções podem ser combinadas conforme o perfil e o tamanho do evento.",
+        "As opções podem ser combinadas conforme o perfil e o tamanho do evento. Além do cardápio apresentado, também elaboramos cardápios personalizados de acordo com o gosto do cliente, com possibilidade de incluir pratos que não estejam no cardápio padrão, mediante consulta e orçamento.",
+    }
+    if first_bootstrap and site.menu_description in legacy_menu_descriptions:
+        site.menu_eyebrow = "Cardápio do buffet"
+        site.menu_title = "Escolha apenas o que varia no seu evento."
+        site.menu_description = (
+            "Churrasco, saladas e os itens inclusos seguem o padrão do buffet. "
+            "Nas categorias indicadas, você escolhe apenas a opção desejada, como massa, "
+            "strogonoff, lasanha e sobremesas. Pedidos especiais continuam sujeitos a consulta."
+        )
 
     team_section = CorporateSection.query.first()
     if not team_section:
@@ -322,7 +382,7 @@ def seed_content() -> None:
             ),
         )
         db.session.add(team_section)
-    elif team_section.eyebrow == "Clientes e eventos":
+    elif first_bootstrap and team_section.eyebrow == "Clientes e eventos":
         team_section.eyebrow = "Quem somos"
         team_section.title = "Pessoas que fazem"
         team_section.highlight = "tudo acontecer."
@@ -332,39 +392,137 @@ def seed_content() -> None:
             "Marquinhos e trabalham para que cada celebração seja conduzida com cuidado."
         )
 
-    if PricingPackage.query.count() == 0:
+    if first_bootstrap and PricingPackage.query.count() == 0:
         packages = [
-            PricingPackage(name="Entrada + sobremesa", price=Decimal("80.00"), description="Inclui entrada, pratos principais, churrasco, saladas e sobremesas.", badge="Completo", featured=True, sort_order=1),
-            PricingPackage(name="Com entrada", price=Decimal("74.00"), description="Entrada, pratos principais, churrasco e saladas.", sort_order=2),
-            PricingPackage(name="Com sobremesa", price=Decimal("73.00"), description="Pratos principais, churrasco, saladas e sobremesas.", sort_order=3),
-            PricingPackage(name="Buffet essencial", price=Decimal("67.00"), description="Sem entrada e sem sobremesa.", sort_order=4),
+            PricingPackage(
+                name="Entrada + sobremesa",
+                price=Decimal("80.00"),
+                description="Inclui entrada, pratos principais, churrasco, saladas e sobremesas.",
+                badge="Completo",
+                includes_entry=True,
+                includes_dessert=True,
+                featured=True,
+                sort_order=1,
+            ),
+            PricingPackage(
+                name="Com entrada",
+                price=Decimal("74.00"),
+                description="Entrada, pratos principais, churrasco e saladas.",
+                includes_entry=True,
+                includes_dessert=False,
+                sort_order=2,
+            ),
+            PricingPackage(
+                name="Com sobremesa",
+                price=Decimal("73.00"),
+                description="Pratos principais, churrasco, saladas e sobremesas.",
+                includes_entry=False,
+                includes_dessert=True,
+                sort_order=3,
+            ),
+            PricingPackage(
+                name="Buffet essencial",
+                price=Decimal("67.00"),
+                description="Sem entrada e sem sobremesa.",
+                includes_entry=False,
+                includes_dessert=False,
+                sort_order=4,
+            ),
         ]
         db.session.add_all(packages)
 
-    if MenuCategory.query.count() == 0:
+    if first_bootstrap and MenuCategory.query.count() == 0:
         menu_seed = [
-            ("Entradas", ["Risoto de alho-poró", "Escondidinho de carne-seca com aipim"]),
-            ("Pratos principais", [
-                "Arroz branco",
-                "Arroz vegetariano, à grega ou campeiro",
-                "Aipim com bacon e queijo",
-                "Macarrão: alho e óleo, carbonara ou molho sugo",
-                "Strogonoff de carne ou frango",
-                "Lasanha: frango, bolonhesa, vegetariana ou quatro queijos",
-            ]),
-            ("Churrasco", ["Entrecot, vazio e maminha", "Costelinha suína", "Sobrecoxa de frango", "Salsichão colonial", "Abacaxi com canela"]),
-            ("Saladas", ["Oito variedades", "Folhas, legumes e vinagrete", "Opções adaptadas à composição do evento"]),
-            ("Sobremesas", ["Mousses: maracujá, uva e Ninho", "Bombom de travessa", "Doce sensação", "Manjar de ameixa", "Abacaxi com creme branco", "Pavê de Sonho de Valsa", "Torta de bolacha"]),
-            ("Incluso", ["Taças", "Pratos", "Talheres em inox", "Guardanapos de papel"]),
+            {
+                "name": "Entradas",
+                "description": "As opções de entrada são oferecidas conforme o pacote escolhido.",
+                "mode": "info",
+                "feature": "entry",
+                "items": ["Risoto de alho-poró", "Escondidinho de carne-seca com aipim"],
+            },
+            {
+                "name": "Acompanhamentos",
+                "description": "Itens do cardápio servidos conforme a composição do buffet.",
+                "mode": "info",
+                "items": [
+                    "Arroz branco",
+                    "Arroz vegetariano, à grega ou campeiro",
+                    "Aipim com bacon e queijo",
+                ],
+            },
+            {
+                "name": "Massas",
+                "mode": "single",
+                "help": "Escolha 1 opção de massa.",
+                "min": 1,
+                "max": 1,
+                "items": ["Alho e óleo", "Carbonara", "Molho sugo"],
+            },
+            {
+                "name": "Strogonoff",
+                "mode": "single",
+                "help": "Escolha carne ou frango.",
+                "min": 1,
+                "max": 1,
+                "items": ["Carne", "Frango"],
+            },
+            {
+                "name": "Lasanha",
+                "mode": "single",
+                "help": "Escolha 1 sabor.",
+                "min": 1,
+                "max": 1,
+                "items": ["Frango", "Bolonhesa", "Vegetariana", "Quatro queijos"],
+            },
+            {
+                "name": "Churrasco",
+                "description": "Seleção padrão do buffet: as variedades abaixo fazem parte do serviço e não precisam ser escolhidas.",
+                "mode": "info",
+                "items": ["Entrecot, vazio e maminha", "Costelinha suína", "Sobrecoxa de frango", "Salsichão colonial", "Abacaxi com canela"],
+            },
+            {
+                "name": "Saladas",
+                "description": "Servimos oito variedades, incluindo folhas, legumes e vinagrete.",
+                "mode": "info",
+                "items": ["Oito variedades de saladas", "Folhas, legumes e vinagrete"],
+            },
+            {
+                "name": "Sobremesas",
+                "description": "Disponíveis nos pacotes que incluem sobremesa.",
+                "mode": "multiple",
+                "feature": "dessert",
+                "help": "Escolha até 3 opções a cada 100 convidados.",
+                "min": 0,
+                "max": 0,
+                "per100": 3,
+                "items": ["Mousses: maracujá, uva e Ninho", "Bombom de travessa", "Doce sensação", "Manjar de ameixa", "Abacaxi com creme branco", "Pavê de Sonho de Valsa", "Torta de bolacha"],
+            },
+            {
+                "name": "Incluso",
+                "description": "Itens incluídos no serviço; não é necessário selecionar.",
+                "mode": "info",
+                "items": ["Taças", "Pratos", "Talheres em inox", "Guardanapos de papel"],
+            },
         ]
-        for category_order, (category_name, items) in enumerate(menu_seed, start=1):
-            category = MenuCategory(name=category_name, sort_order=category_order)
+        for category_order, data in enumerate(menu_seed, start=1):
+            category = MenuCategory(
+                name=data["name"],
+                description=data.get("description"),
+                selection_mode=data.get("mode", "info"),
+                selection_help=data.get("help"),
+                package_feature=data.get("feature", "always"),
+                min_choices=data.get("min", 0),
+                max_choices=data.get("max", 0),
+                choices_per_100=data.get("per100", 0),
+                sort_order=category_order * 10,
+            )
             db.session.add(category)
             db.session.flush()
-            for item_order, item_name in enumerate(items, start=1):
+            for item_order, item_name in enumerate(data["items"], start=1):
                 db.session.add(MenuItem(category_id=category.id, name=item_name, sort_order=item_order))
+        current_settings.menu_structure_version = 3
 
-    if GalleryImage.query.count() == 0:
+    if first_bootstrap and GalleryImage.query.count() == 0:
         gallery_seed = [
             # 1. Churrasco
             ("images/churrasco-carne-nova.webp", "churrasco"),
@@ -437,6 +595,8 @@ def seed_content() -> None:
         "images/gratinado-2.webp": "images/prato-novo-mesa-posta.webp",
     }
     for old_filename, new_filename in prato_photo_updates.items():
+        if not first_bootstrap:
+            break
         legacy_photo = GalleryImage.query.filter_by(
             storage="static",
             filename=old_filename,
@@ -445,10 +605,11 @@ def seed_content() -> None:
         if legacy_photo:
             legacy_photo.filename = new_filename
 
-    for legacy_image in GalleryImage.query.filter_by(category="clientes").all():
-        db.session.delete(legacy_image)
+    if first_bootstrap:
+        for legacy_image in GalleryImage.query.filter_by(category="clientes").all():
+            db.session.delete(legacy_image)
 
-    if TeamMember.query.count() == 0:
+    if first_bootstrap and TeamMember.query.count() == 0:
         db.session.add_all([
             TeamMember(
                 name="Marquinhos",
@@ -485,82 +646,273 @@ def seed_content() -> None:
                 sort_order=3,
             ),
         ])
-    else:
-        # Atualiza automaticamente a seção em instalações que já possuam banco de dados.
-        marquinhos_member = TeamMember.query.filter_by(name="Marquinhos").first()
-        if marquinhos_member and marquinhos_member.image_storage == "static":
-            marquinhos_member.role = "Proprietário e fundador"
-            marquinhos_member.bio = (
-                "À frente do buffet, acompanha a preparação, a organização e a realização de cada evento."
-            )
-            marquinhos_member.image_filename = "images/equipe-marquinhos.webp"
-            marquinhos_member.sort_order = 1
 
-        virginia_member = TeamMember.query.filter_by(name="Virgínia").first()
-        if virginia_member and virginia_member.image_storage == "static":
-            virginia_member.role = "Proprietária, fundadora e responsável pela cozinha"
-            virginia_member.bio = (
-                "Participa da preparação e da organização dos eventos, coordenando a cozinha "
-                "e sendo responsável pela elaboração dos alimentos do buffet, para que cada "
-                "serviço seja conduzido com cuidado, qualidade e dedicação."
-            )
-            virginia_member.image_filename = "images/equipe-virginia.webp"
-            virginia_member.sort_order = 2
-
-        team_member = TeamMember.query.filter_by(name="Equipe do Buffet do Marquinhos").first()
-        if team_member and team_member.image_storage == "static":
-            team_member.role = "Preparo, organização e atendimento dos eventos"
-            team_member.bio = (
-                "Uma equipe comprometida com a cozinha, o churrasco, a montagem e o atendimento, "
-                "trabalhando em conjunto para oferecer uma experiência acolhedora aos convidados."
-            )
-            team_member.image_filename = "images/equipe-grupo.webp"
-            team_member.sort_order = 3
+    if first_bootstrap:
+        current_settings.bootstrap_version = 1
 
     db.session.commit()
 
 
 def ensure_schema_updates() -> None:
-    # Mantém compatibilidade caso o site já tenha sido iniciado antes desta atualização.
-    # Como este projeto usa db.create_all() (sem Alembic), colunas novas precisam ser
-    # adicionadas explicitamente quando o banco já existe no Render.
+    """Aplica apenas migrações aditivas, seguras para SQLite e PostgreSQL."""
     inspector = inspect(db.engine)
     tables = set(inspector.get_table_names())
+
+    statements: list[str] = []
 
     if "site_content" in tables:
         columns = {column["name"] for column in inspector.get_columns("site_content")}
         if "dessert_notice" not in columns:
-            with db.engine.begin() as connection:
-                connection.execute(text("ALTER TABLE site_content ADD COLUMN dessert_notice TEXT"))
-                connection.execute(
-                    text(
-                        "UPDATE site_content SET dessert_notice = :notice "
-                        "WHERE dessert_notice IS NULL OR dessert_notice = ''"
-                    ),
-                    {"notice": "São disponibilizadas 3 opções de sobremesas a cada 100 convidados."},
-                )
+            statements.append("ALTER TABLE site_content ADD COLUMN dessert_notice TEXT")
+
+    if "setting" in tables:
+        columns = {column["name"] for column in inspector.get_columns("setting")}
+        if "bootstrap_version" not in columns:
+            statements.append(
+                "ALTER TABLE setting ADD COLUMN bootstrap_version INTEGER NOT NULL DEFAULT 0"
+            )
+        if "menu_structure_version" not in columns:
+            statements.append(
+                "ALTER TABLE setting ADD COLUMN menu_structure_version INTEGER NOT NULL DEFAULT 0"
+            )
+
+    if "pricing_package" in tables:
+        columns = {column["name"] for column in inspector.get_columns("pricing_package")}
+        if "includes_entry" not in columns:
+            statements.append(
+                "ALTER TABLE pricing_package ADD COLUMN includes_entry BOOLEAN NOT NULL DEFAULT FALSE"
+            )
+        if "includes_dessert" not in columns:
+            statements.append(
+                "ALTER TABLE pricing_package ADD COLUMN includes_dessert BOOLEAN NOT NULL DEFAULT FALSE"
+            )
 
     if "menu_category" in tables:
         columns = {column["name"] for column in inspector.get_columns("menu_category")}
-        statements = []
+        if "selection_mode" not in columns:
+            statements.append(
+                "ALTER TABLE menu_category ADD COLUMN selection_mode VARCHAR(20) NOT NULL DEFAULT 'info'"
+            )
         if "selection_help" not in columns:
             statements.append("ALTER TABLE menu_category ADD COLUMN selection_help VARCHAR(240)")
+        if "package_feature" not in columns:
+            statements.append(
+                "ALTER TABLE menu_category ADD COLUMN package_feature VARCHAR(20) NOT NULL DEFAULT 'always'"
+            )
         if "min_choices" not in columns:
-            statements.append("ALTER TABLE menu_category ADD COLUMN min_choices INTEGER NOT NULL DEFAULT 0")
+            statements.append(
+                "ALTER TABLE menu_category ADD COLUMN min_choices INTEGER NOT NULL DEFAULT 0"
+            )
         if "max_choices" not in columns:
-            statements.append("ALTER TABLE menu_category ADD COLUMN max_choices INTEGER NOT NULL DEFAULT 0")
-        if statements:
-            with db.engine.begin() as connection:
-                for statement in statements:
-                    connection.execute(text(statement))
+            statements.append(
+                "ALTER TABLE menu_category ADD COLUMN max_choices INTEGER NOT NULL DEFAULT 0"
+            )
+        if "choices_per_100" not in columns:
+            statements.append(
+                "ALTER TABLE menu_category ADD COLUMN choices_per_100 INTEGER NOT NULL DEFAULT 0"
+            )
+
+    if statements:
+        with db.engine.begin() as connection:
+            for statement in statements:
+                connection.execute(text(statement))
+
+    # Preenche o texto antigo somente quando a coluna acabou de ser criada ou está vazia.
+    if "site_content" in tables:
+        with db.engine.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE site_content SET dessert_notice = :notice "
+                    "WHERE dessert_notice IS NULL OR dessert_notice = ''"
+                ),
+                {"notice": "São disponibilizadas 3 opções de sobremesas a cada 100 convidados."},
+            )
+
+
+def _find_or_create_category(name: str, sort_order: int) -> MenuCategory:
+    category = MenuCategory.query.filter(db.func.lower(MenuCategory.name) == name.lower()).first()
+    if category:
+        return category
+    category = MenuCategory(name=name, sort_order=sort_order, active=True)
+    db.session.add(category)
+    db.session.flush()
+    return category
+
+
+def _add_item_if_missing(category: MenuCategory, name: str, sort_order: int) -> None:
+    exists = MenuItem.query.filter(
+        MenuItem.category_id == category.id,
+        db.func.lower(MenuItem.name) == name.lower(),
+    ).first()
+    if not exists:
+        db.session.add(
+            MenuItem(category_id=category.id, name=name, active=True, sort_order=sort_order)
+        )
+
+
+def apply_data_migrations() -> None:
+    """Converte com cuidado bancos antigos para a estrutura atual do cardápio.
+
+    Cada versão é aplicada uma única vez. Isso evita que um restart/deploy volte a
+    impor os padrões sobre escolhas que o administrador alterou depois.
+    """
+    current = Setting.query.first()
+    if not current:
+        current = Setting(max_events_per_day=2, bootstrap_version=0, menu_structure_version=0)
+        db.session.add(current)
+        db.session.flush()
+
+    version = current.menu_structure_version or 0
+    if version >= 3:
+        db.session.commit()
+        return
+
+    if version < 2:
+        # Flags dos quatro pacotes padrão são preenchidas apenas na migração do
+        # formato antigo. Depois disso, o painel é a fonte de verdade.
+        package_flags = {
+            "entrada + sobremesa": (True, True),
+            "com entrada": (True, False),
+            "com sobremesa": (False, True),
+            "buffet essencial": (False, False),
+        }
+        for package in PricingPackage.query.all():
+            flags = package_flags.get(package.name.strip().lower())
+            if flags:
+                package.includes_entry, package.includes_dessert = flags
+
+        # Categorias antigas que já tinham limite configurado continuam selecionáveis.
+        for category in MenuCategory.query.all():
+            if category.max_choices == 1:
+                category.selection_mode = "single"
+            elif category.max_choices > 1 or category.min_choices > 0:
+                category.selection_mode = "multiple"
+            else:
+                category.selection_mode = "info"
+            category.choices_per_100 = max(0, category.choices_per_100 or 0)
+
+        by_name = {
+            category.name.strip().lower(): category for category in MenuCategory.query.all()
+        }
+
+        # Categorias padrão do buffet não exigem clique do cliente.
+        for category_name in ("entradas", "churrasco", "saladas", "incluso"):
+            category = by_name.get(category_name)
+            if category:
+                category.selection_mode = "info"
+                category.min_choices = 0
+                category.max_choices = 0
+                category.choices_per_100 = 0
+
+        sobremesas = by_name.get("sobremesas")
+        if sobremesas:
+            sobremesas.selection_mode = "multiple"
+            sobremesas.min_choices = 0
+            sobremesas.max_choices = 0
+            sobremesas.choices_per_100 = 3
+            if not sobremesas.selection_help:
+                sobremesas.selection_help = "Escolha até 3 opções a cada 100 convidados."
+            if not sobremesas.description:
+                sobremesas.description = "Disponíveis nos pacotes que incluem sobremesa."
+
+        # A categoria antiga 'Pratos principais' misturava itens fixos com escolhas.
+        # Só desmembramos as linhas padrão conhecidas; qualquer item personalizado é preservado.
+        pratos = by_name.get("pratos principais")
+        if pratos:
+            known_splits = {
+                "macarrão: alho e óleo, carbonara ou molho sugo": (
+                    "Massas",
+                    ["Alho e óleo", "Carbonara", "Molho sugo"],
+                    "Escolha 1 opção de massa.",
+                    30,
+                ),
+                "strogonoff de carne ou frango": (
+                    "Strogonoff",
+                    ["Carne", "Frango"],
+                    "Escolha carne ou frango.",
+                    40,
+                ),
+                "lasanha: frango, bolonhesa, vegetariana ou quatro queijos": (
+                    "Lasanha",
+                    ["Frango", "Bolonhesa", "Vegetariana", "Quatro queijos"],
+                    "Escolha 1 sabor.",
+                    50,
+                ),
+            }
+            for item in list(pratos.items):
+                split = known_splits.get(item.name.strip().lower())
+                if not split:
+                    continue
+                category_name, option_names, help_text, order = split
+                target = _find_or_create_category(category_name, order)
+                target.selection_mode = "single"
+                target.selection_help = help_text
+                target.min_choices = 1
+                target.max_choices = 1
+                target.choices_per_100 = 0
+                for option_order, option_name in enumerate(option_names, start=1):
+                    _add_item_if_missing(target, option_name, option_order)
+                db.session.delete(item)
+
+            pratos.selection_mode = "info"
+            pratos.min_choices = 0
+            pratos.max_choices = 0
+            pratos.choices_per_100 = 0
+            default_remaining = {
+                "arroz branco",
+                "arroz vegetariano, à grega ou campeiro",
+                "aipim com bacon e queijo",
+            }
+            remaining_names = {item.name.strip().lower() for item in pratos.items}
+            if remaining_names and remaining_names.issubset(default_remaining):
+                pratos.name = "Acompanhamentos"
+                pratos.description = "Itens do cardápio servidos conforme a composição do buffet."
+                pratos.sort_order = 20
+
+        # Ajusta texto das categorias padrão sem apagar conteúdo personalizado.
+        churrasco = MenuCategory.query.filter(db.func.lower(MenuCategory.name) == "churrasco").first()
+        if churrasco and not churrasco.description:
+            churrasco.description = (
+                "Seleção padrão do buffet: as variedades abaixo fazem parte do serviço e não precisam ser escolhidas."
+            )
+        saladas = MenuCategory.query.filter(db.func.lower(MenuCategory.name) == "saladas").first()
+        if saladas and not saladas.description:
+            saladas.description = "Servimos oito variedades, incluindo folhas, legumes e vinagrete."
+        incluso = MenuCategory.query.filter(db.func.lower(MenuCategory.name) == "incluso").first()
+        if incluso and not incluso.description:
+            incluso.description = "Itens incluídos no serviço; não é necessário selecionar."
+
+        current.menu_structure_version = 2
+        db.session.flush()
+
+    # Versão 3: vínculo explícito entre categoria e tipo de pacote. Isso substitui
+    # a antiga dependência de procurar palavras como 'entrada'/'sobremesa' no nome.
+    # Não altera regras de escolha nem flags dos pacotes já configuradas pelo admin.
+    for category in MenuCategory.query.all():
+        if category.package_feature not in MENU_PACKAGE_FEATURES:
+            category.package_feature = "always"
+
+    entradas = MenuCategory.query.filter(db.func.lower(MenuCategory.name) == "entradas").first()
+    if entradas and (current.menu_structure_version or 0) < 3:
+        entradas.package_feature = "entry"
+
+    sobremesas = MenuCategory.query.filter(db.func.lower(MenuCategory.name) == "sobremesas").first()
+    if sobremesas and (current.menu_structure_version or 0) < 3:
+        sobremesas.package_feature = "dessert"
+
+    current.menu_structure_version = 3
+    db.session.commit()
 
 
 def ensure_database() -> None:
     INSTANCE_DIR.mkdir(parents=True, exist_ok=True)
     UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+    # create_all cria tabelas faltantes; ensure_schema_updates cuida de bancos antigos.
     db.create_all()
     ensure_schema_updates()
+    # Recarrega metadados/objetos após ALTER TABLE e então semeia apenas dados ausentes.
     seed_content()
+    apply_data_migrations()
 
 
 with app.app_context():
@@ -601,6 +953,16 @@ def protect_admin_posts():
         if not supplied or not expected or not secrets.compare_digest(supplied, expected):
             abort(400, description="Token de segurança inválido. Atualize a página e tente novamente.")
 
+        # Login/logout não alteram dados de negócio. Todas as demais gravações ficam
+        # bloqueadas no Render até que o PostgreSQL persistente esteja conectado.
+        if request.endpoint not in {"admin_login", "admin_logout"} and not PERSISTENCE_READY:
+            flash(
+                "Salvamento bloqueado por segurança: conecte o PostgreSQL persistente no Render "
+                "antes de cadastrar ou alterar dados.",
+                "error",
+            )
+            return redirect(url_for("admin_dashboard"))
+
 
 @app.after_request
 def add_security_headers(response):
@@ -608,18 +970,70 @@ def add_security_headers(response):
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; "
+        "base-uri 'self'; "
+        "object-src 'none'; "
+        "frame-ancestors 'none'; "
+        "script-src 'self'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob:; "
+        "connect-src 'self'; "
+        "font-src 'self'; "
+        "form-action 'self'",
+    )
+    if request.path.startswith("/admin"):
+        response.headers["Cache-Control"] = "no-store, private"
+    if RUNNING_ON_RENDER:
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return response
+
+
+def safe_admin_referrer(default_endpoint: str = "admin_dashboard") -> str:
+    """Retorna somente um referrer local do painel, evitando redirecionamento externo."""
+    referrer = request.referrer or ""
+    parsed = urlparse(referrer)
+    same_host = not parsed.netloc or parsed.netloc == request.host
+    if same_host and parsed.path.startswith("/admin"):
+        target = parsed.path
+        if parsed.query:
+            target += f"?{parsed.query}"
+        return target
+    return url_for(default_endpoint)
+
+
+@app.errorhandler(400)
+def bad_request(error):
+    if request.path.startswith("/admin"):
+        description = getattr(error, "description", "Solicitação inválida.")
+        flash(str(description), "error")
+        destination = "admin_dashboard" if session.get("admin_logged_in") else "admin_login"
+        return redirect(url_for(destination)), 400
+    return jsonify({"error": "Solicitação inválida."}), 400
 
 
 @app.errorhandler(413)
 def upload_too_large(_error):
     flash(f"A imagem ultrapassa o limite de {MAX_UPLOAD_MB} MB.", "error")
-    return redirect(request.referrer or url_for("admin_gallery"))
+    return redirect(safe_admin_referrer("admin_gallery"))
+
+
+@app.errorhandler(SQLAlchemyError)
+def database_error(error):
+    db.session.rollback()
+    app.logger.exception("Erro de banco de dados", exc_info=error)
+    if request.path.startswith("/admin"):
+        flash("O banco de dados ficou indisponível por alguns instantes. Nenhuma alteração parcial foi salva. Tente novamente.", "error")
+        return redirect(safe_admin_referrer("admin_dashboard")), 503
+    return jsonify({"error": "Serviço temporariamente indisponível."}), 503
 
 
 def admin_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
+        if not PRODUCTION_SECRET_READY:
+            abort(503, description="Configure SECRET_KEY no Render antes de usar o painel administrativo.")
         if not session.get("admin_logged_in"):
             return redirect(url_for("admin_login", next=request.path))
         return view(*args, **kwargs)
@@ -642,6 +1056,61 @@ def safe_int(value: str | None, default: int = 0) -> int:
         return int(value or default)
     except (TypeError, ValueError):
         return default
+
+
+def normalized_package_feature(form) -> str:
+    feature = (form.get("package_feature") or "always").strip().lower()
+    return feature if feature in MENU_PACKAGE_FEATURES else "always"
+
+
+def normalized_category_rules(form) -> tuple[str, int, int, int]:
+    mode = (form.get("selection_mode") or "info").strip().lower()
+    if mode not in MENU_SELECTION_MODES:
+        mode = "info"
+
+    if mode == "info":
+        return mode, 0, 0, 0
+    if mode == "single":
+        return mode, 1, 1, 0
+
+    min_choices = max(0, safe_int(form.get("min_choices"), 0))
+    max_choices = max(0, safe_int(form.get("max_choices"), 0))
+    choices_per_100 = max(0, safe_int(form.get("choices_per_100"), 0))
+    if choices_per_100 > 0:
+        # A regra por 100 substitui um teto fixo. O mínimo não pode tornar o
+        # primeiro bloco de 100 impossível de preencher.
+        max_choices = 0
+        if min_choices > choices_per_100:
+            raise ValueError("O mínimo não pode ser maior que o limite por 100 convidados.")
+    elif max_choices > 0 and min_choices > max_choices:
+        raise ValueError("A quantidade mínima não pode ser maior que a quantidade máxima.")
+    return mode, min_choices, max_choices, choices_per_100
+
+
+def database_storage_status() -> dict:
+    backend = db.engine.url.get_backend_name()
+    if backend == "postgresql":
+        return {
+            "kind": "PostgreSQL",
+            "persistent": True,
+            "message": "Dados administrativos armazenados em PostgreSQL persistente.",
+        }
+    database_path = str(db.engine.url.database or "")
+    persistent_sqlite = database_path.startswith("/var/data/")
+    if RUNNING_ON_RENDER:
+        return {
+            "kind": "SQLite",
+            "persistent": False,
+            "message": (
+                "Modo de proteção ativo: o painel não permite salvar enquanto o PostgreSQL "
+                "não estiver conectado."
+            ),
+        }
+    return {
+        "kind": "SQLite",
+        "persistent": persistent_sqlite,
+        "message": "Banco local de desenvolvimento.",
+    }
 
 
 def parse_decimal(value: str) -> Decimal:
@@ -672,6 +1141,14 @@ def normalize_instagram_handle(value: str) -> str:
     return raw.lstrip("@").strip()
 
 
+def business_now() -> datetime:
+    return datetime.now(BUSINESS_TZ)
+
+
+def business_today() -> date:
+    return business_now().date()
+
+
 def month_from_query() -> tuple[int, int]:
     raw = request.args.get("mes")
     if raw:
@@ -680,7 +1157,7 @@ def month_from_query() -> tuple[int, int]:
             return parsed.year, parsed.month
         except ValueError:
             pass
-    today = date.today()
+    today = business_today()
     return today.year, today.month
 
 
@@ -696,13 +1173,29 @@ def active_event_count(day: date, exclude_event_id: int | None = None) -> int:
     return query.count()
 
 
+def capacity_limit_for_write() -> int:
+    """Serializa gravações de agenda no PostgreSQL para evitar ultrapassar a capacidade.
+
+    Em produção, SELECT ... FOR UPDATE mantém a linha de configuração bloqueada até
+    o commit/rollback do request. Assim dois cadastros simultâneos não validam a
+    capacidade com o mesmo estado antigo. No SQLite local, usamos a consulta normal.
+    """
+    query = Setting.query
+    if db.engine.url.get_backend_name() == "postgresql":
+        query = query.with_for_update()
+    current = query.first()
+    if current is None:
+        current = settings()
+    return current.max_events_per_day
+
+
 def availability(day: date) -> dict:
     max_events = settings().max_events_per_day
     blocked = BlockedDate.query.filter_by(blocked_date=day).first()
     count = active_event_count(day)
     remaining = max(max_events - count, 0)
 
-    if day < date.today():
+    if day < business_today():
         status = "indisponivel"
         message = "Essa data já passou."
     elif blocked:
@@ -753,22 +1246,33 @@ def save_uploaded_image(file_storage, prefix: str = "foto") -> str:
     if extension not in ALLOWED_IMAGE_EXTENSIONS:
         raise ValueError("Formato inválido. Envie JPG, PNG ou WEBP.")
 
-    try:
-        image = Image.open(file_storage.stream)
-        image.verify()
-        file_storage.stream.seek(0)
-        image = Image.open(file_storage.stream)
-        image = ImageOps.exif_transpose(image)
-        if image.mode not in ("RGB", "RGBA"):
-            image = image.convert("RGBA" if "transparency" in image.info else "RGB")
-        image.thumbnail((2200, 2200), Image.Resampling.LANCZOS)
-    except (UnidentifiedImageError, OSError) as exc:
-        raise ValueError("O arquivo enviado não é uma imagem válida.") from exc
-
     filename = f"{prefix}-{uuid.uuid4().hex}.webp"
     target = UPLOAD_ROOT / filename
     target.parent.mkdir(parents=True, exist_ok=True)
-    image.save(target, "WEBP", quality=88, method=6)
+
+    try:
+        # verify() valida a estrutura sem decodificar a imagem inteira. Depois
+        # reabrimos o stream para aplicar rotação EXIF, reduzir e salvar em WEBP.
+        with Image.open(file_storage.stream) as probe:
+            width, height = probe.size
+            if width <= 0 or height <= 0 or width * height > MAX_IMAGE_PIXELS:
+                raise ValueError("A imagem é grande demais. Use uma foto de até 40 megapixels.")
+            probe.verify()
+
+        file_storage.stream.seek(0)
+        with Image.open(file_storage.stream) as source:
+            image = ImageOps.exif_transpose(source)
+            if image.mode not in ("RGB", "RGBA"):
+                image = image.convert("RGBA" if "transparency" in image.info else "RGB")
+            image.thumbnail((2200, 2200), Image.Resampling.LANCZOS)
+            image.save(target, "WEBP", quality=88, method=6)
+    except ValueError:
+        remove_upload(filename)
+        raise
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
+        remove_upload(filename)
+        raise ValueError("O arquivo enviado não é uma imagem válida ou não pôde ser processado.") from exc
+
     return filename
 
 
@@ -791,15 +1295,26 @@ def corporate_section() -> CorporateSection:
 
 
 def admin_template_context() -> dict:
-    return {"site": site_content(), "corporate": corporate_section()}
+    return {
+        "site": site_content(),
+        "corporate": corporate_section(),
+        "storage_status": database_storage_status(),
+    }
 
 
 @app.get("/health")
 def health():
     try:
         db.session.execute(text("SELECT 1"))
-        return jsonify({"status": "ok"}), 200
+        storage = database_storage_status()
+        return jsonify({
+            "status": "ok",
+            "database": storage["kind"],
+            "persistent": storage["persistent"],
+            "timezone": str(BUSINESS_TZ),
+        }), 200
     except Exception:
+        db.session.rollback()
         return jsonify({"status": "error"}), 503
 
 
@@ -857,13 +1372,20 @@ def api_disponibilidade():
     try:
         day = parse_date(raw)
     except ValueError:
-        return jsonify({"error": "Data inválida."}), 400
-    return jsonify(availability(day))
+        response = jsonify({"error": "Data inválida."})
+        response.headers["Cache-Control"] = "no-store"
+        return response, 400
+    response = jsonify(availability(day))
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.route("/admin/login", methods=["GET", "POST"])
 def admin_login():
     if request.method == "POST":
+        if not PRODUCTION_SECRET_READY:
+            flash("Configure SECRET_KEY no Render antes de acessar o painel.", "error")
+            return render_template("admin/login.html", **admin_template_context()), 503
         supplied = request.form.get("password", "")
         expected = os.getenv("ADMIN_PASSWORD")
         if not expected:
@@ -872,6 +1394,7 @@ def admin_login():
                 return render_template("admin/login.html", **admin_template_context()), 503
             expected = "troque-esta-senha"
         if secrets.compare_digest(supplied, expected):
+            session.clear()
             session["admin_logged_in"] = True
             session.permanent = True
             next_url = request.args.get("next", "")
@@ -924,7 +1447,7 @@ def admin_dashboard():
 
     previous = add_months(year, month, -1)
     following = add_months(year, month, 1)
-    today = date.today()
+    today = business_today()
     upcoming = Event.query.filter(Event.event_date >= today, Event.status.in_(ACTIVE_STATUSES)).order_by(Event.event_date, Event.event_time).limit(8).all()
 
     month_names = ["", "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
@@ -955,10 +1478,11 @@ def admin_new_event():
         if status not in STATUS_LABELS:
             raise ValueError("Status inválido")
         if status in ACTIVE_STATUSES:
+            max_events = capacity_limit_for_write()
             if BlockedDate.query.filter_by(blocked_date=event_date).first():
                 flash("Esta data está bloqueada. Desbloqueie-a antes de cadastrar o evento.", "error")
                 return redirect(url_for("admin_dashboard", mes=event_date.strftime("%Y-%m")))
-            if active_event_count(event_date) >= settings().max_events_per_day:
+            if active_event_count(event_date) >= max_events:
                 flash("A capacidade máxima de eventos para essa data já foi atingida.", "error")
                 return redirect(url_for("admin_dashboard", mes=event_date.strftime("%Y-%m")))
 
@@ -1000,11 +1524,12 @@ def admin_edit_event(event_id: int):
             if new_status not in STATUS_LABELS:
                 raise ValueError("Status inválido")
             if new_status in ACTIVE_STATUSES:
+                max_events = capacity_limit_for_write()
                 blocked = BlockedDate.query.filter_by(blocked_date=new_date).first()
                 if blocked and new_date != event.event_date:
                     flash("A nova data está bloqueada.", "error")
                     return redirect(url_for("admin_edit_event", event_id=event.id))
-                if active_event_count(new_date, exclude_event_id=event.id) >= settings().max_events_per_day:
+                if active_event_count(new_date, exclude_event_id=event.id) >= max_events:
                     flash("A nova data já atingiu a capacidade máxima.", "error")
                     return redirect(url_for("admin_edit_event", event_id=event.id))
 
@@ -1048,6 +1573,7 @@ def admin_delete_event(event_id: int):
 def admin_block_date():
     try:
         blocked_date = parse_date(request.form.get("blocked_date", ""))
+        capacity_limit_for_write()  # serializa com cadastros/edições de evento concorrentes
         item = BlockedDate.query.filter_by(blocked_date=blocked_date).first()
         if not item:
             item = BlockedDate(blocked_date=blocked_date)
@@ -1122,7 +1648,7 @@ def admin_save_content():
     if submitted_instagram:
         site.instagram_handle = submitted_instagram
 
-    site.since_year = max(1900, min(date.today().year, safe_int(request.form.get("since_year"), site.since_year)))
+    site.since_year = max(1900, min(business_today().year, safe_int(request.form.get("since_year"), site.since_year)))
 
     corporate = corporate_section()
     for field in ["eyebrow", "title", "highlight", "description"]:
@@ -1145,11 +1671,17 @@ def admin_upload_logo():
         return redirect(url_for("admin_content"))
     try:
         filename = save_uploaded_image(file_storage, prefix="logo")
-        if site.logo_storage == "upload":
-            remove_upload(site.logo_filename)
+        old_upload = site.logo_filename if site.logo_storage == "upload" else None
         site.logo_storage = "upload"
         site.logo_filename = filename
-        db.session.commit()
+        try:
+            db.session.commit()
+        except SQLAlchemyError:
+            db.session.rollback()
+            remove_upload(filename)
+            raise
+        if old_upload and old_upload != filename:
+            remove_upload(old_upload)
         flash("Logo atualizado.", "success")
     except ValueError as exc:
         flash(str(exc), "error")
@@ -1166,11 +1698,17 @@ def admin_upload_official_menu():
         return redirect(url_for("admin_content"))
     try:
         filename = save_uploaded_image(file_storage, prefix="cardapio")
-        if site.official_menu_storage == "upload":
-            remove_upload(site.official_menu_filename)
+        old_upload = site.official_menu_filename if site.official_menu_storage == "upload" else None
         site.official_menu_storage = "upload"
         site.official_menu_filename = filename
-        db.session.commit()
+        try:
+            db.session.commit()
+        except SQLAlchemyError:
+            db.session.rollback()
+            remove_upload(filename)
+            raise
+        if old_upload and old_upload != filename:
+            remove_upload(old_upload)
         flash("Imagem do cardápio oficial atualizada.", "success")
     except ValueError as exc:
         flash(str(exc), "error")
@@ -1189,6 +1727,8 @@ def admin_new_package():
             price=parse_decimal(request.form.get("price", "")),
             description=request.form.get("description", "").strip(),
             badge=request.form.get("badge", "").strip() or None,
+            includes_entry=request.form.get("includes_entry") == "on",
+            includes_dessert=request.form.get("includes_dessert") == "on",
             featured=request.form.get("featured") == "on",
             active=request.form.get("active") == "on",
             sort_order=safe_int(request.form.get("sort_order"), 0),
@@ -1213,6 +1753,8 @@ def admin_save_package(package_id: int):
         package.price = parse_decimal(request.form.get("price", ""))
         package.description = request.form.get("description", "").strip()
         package.badge = request.form.get("badge", "").strip() or None
+        package.includes_entry = request.form.get("includes_entry") == "on"
+        package.includes_dessert = request.form.get("includes_dessert") == "on"
         package.featured = request.form.get("featured") == "on"
         package.active = request.form.get("active") == "on"
         package.sort_order = safe_int(request.form.get("sort_order"), 0)
@@ -1238,36 +1780,44 @@ def admin_delete_package(package_id: int):
 @admin_required
 def admin_menu():
     categories = MenuCategory.query.order_by(MenuCategory.sort_order, MenuCategory.id).all()
-    return render_template("admin/menu.html", categories=categories, active_page="cardapio", **admin_template_context())
+    return render_template(
+        "admin/menu.html",
+        categories=categories,
+        selection_modes=MENU_SELECTION_MODES,
+        package_features=MENU_PACKAGE_FEATURES,
+        active_page="cardapio",
+        **admin_template_context(),
+    )
 
 
 @app.post("/admin/cardapio/categorias/nova")
 @admin_required
 def admin_new_category():
     name = request.form.get("name", "").strip()
-    min_choices = max(0, safe_int(request.form.get("min_choices"), 0))
-    max_choices = max(0, safe_int(request.form.get("max_choices"), 0))
-
     if not name:
         flash("Informe o nome da categoria.", "error")
-    elif max_choices > 0 and min_choices > max_choices:
-        flash(
-            "A quantidade mínima não pode ser maior que a quantidade máxima.",
-            "error",
-        )
-    else:
+        return redirect(url_for("admin_menu"))
+
+    try:
+        mode, min_choices, max_choices, choices_per_100 = normalized_category_rules(request.form)
         category = MenuCategory(
             name=name,
             description=request.form.get("description", "").strip() or None,
+            selection_mode=mode,
             selection_help=request.form.get("selection_help", "").strip() or None,
+            package_feature=normalized_package_feature(request.form),
             min_choices=min_choices,
             max_choices=max_choices,
+            choices_per_100=choices_per_100,
             active=request.form.get("active") == "on",
             sort_order=safe_int(request.form.get("sort_order"), 0),
         )
         db.session.add(category)
         db.session.commit()
         flash("Categoria adicionada.", "success")
+    except ValueError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
     return redirect(url_for("admin_menu"))
 
 
@@ -1276,26 +1826,27 @@ def admin_new_category():
 def admin_save_category(category_id: int):
     category = MenuCategory.query.get_or_404(category_id)
     name = request.form.get("name", "").strip()
-    min_choices = max(0, safe_int(request.form.get("min_choices"), 0))
-    max_choices = max(0, safe_int(request.form.get("max_choices"), 0))
-
     if not name:
         flash("Informe o nome da categoria.", "error")
-    elif max_choices > 0 and min_choices > max_choices:
-        flash(
-            "A quantidade mínima não pode ser maior que a quantidade máxima.",
-            "error",
-        )
-    else:
+        return redirect(url_for("admin_menu") + f"#categoria-{category_id}")
+
+    try:
+        mode, min_choices, max_choices, choices_per_100 = normalized_category_rules(request.form)
         category.name = name
         category.description = request.form.get("description", "").strip() or None
+        category.selection_mode = mode
         category.selection_help = request.form.get("selection_help", "").strip() or None
+        category.package_feature = normalized_package_feature(request.form)
         category.min_choices = min_choices
         category.max_choices = max_choices
+        category.choices_per_100 = choices_per_100
         category.active = request.form.get("active") == "on"
         category.sort_order = safe_int(request.form.get("sort_order"), 0)
         db.session.commit()
         flash("Categoria atualizada.", "success")
+    except ValueError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
     return redirect(url_for("admin_menu") + f"#categoria-{category_id}")
 
 
@@ -1390,16 +1941,25 @@ def admin_upload_gallery():
 
     added = 0
     errors = []
+    saved_filenames: list[str] = []
     next_order = (db.session.query(db.func.max(GalleryImage.sort_order)).scalar() or 0) + 1
     for file_storage in files:
         try:
             filename = save_uploaded_image(file_storage, prefix="galeria")
+            saved_filenames.append(filename)
             db.session.add(GalleryImage(storage="upload", filename=filename, category=category, active=True, sort_order=next_order))
             next_order += 1
             added += 1
         except ValueError as exc:
             errors.append(f"{file_storage.filename}: {exc}")
-    db.session.commit()
+    try:
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        # Se o banco falhar, remove os arquivos que ainda não possuem registro válido.
+        for filename in saved_filenames:
+            remove_upload(filename)
+        raise
     if added:
         flash(f"{added} foto(s) adicionada(s) à galeria.", "success")
     if errors:
@@ -1442,10 +2002,11 @@ def admin_delete_gallery_image(image_id: int):
     for field in ["hero_image_id", "about_image_1_id", "about_image_2_id", "about_image_3_id"]:
         if getattr(site, field) == image.id:
             setattr(site, field, None)
-    if image.storage == "upload":
-        remove_upload(image.filename)
+    upload_to_remove = image.filename if image.storage == "upload" else None
     db.session.delete(image)
     db.session.commit()
+    if upload_to_remove:
+        remove_upload(upload_to_remove)
     flash("Foto excluída.", "success")
     return redirect(url_for("admin_gallery"))
 
@@ -1491,7 +2052,13 @@ def admin_new_team_member():
             return redirect(url_for("admin_team"))
 
     db.session.add(member)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        if member.image_storage == "upload":
+            remove_upload(member.image_filename)
+        raise
     flash("Integrante adicionado à seção Quem somos.", "success")
     return redirect(url_for("admin_team"))
 
@@ -1512,18 +2079,27 @@ def admin_save_team_member(member_id: int):
     member.sort_order = safe_int(request.form.get("sort_order"), member.sort_order)
 
     file_storage = request.files.get("photo")
+    new_filename = None
+    old_upload = None
     if file_storage and file_storage.filename:
         try:
             new_filename = save_uploaded_image(file_storage, prefix="equipe")
-            if member.image_storage == "upload":
-                remove_upload(member.image_filename)
+            old_upload = member.image_filename if member.image_storage == "upload" else None
             member.image_storage = "upload"
             member.image_filename = new_filename
         except ValueError as exc:
             flash(str(exc), "error")
             return redirect(url_for("admin_team") + f"#integrante-{member.id}")
 
-    db.session.commit()
+    try:
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        if new_filename:
+            remove_upload(new_filename)
+        raise
+    if old_upload and old_upload != new_filename:
+        remove_upload(old_upload)
     flash("Integrante atualizado.", "success")
     return redirect(url_for("admin_team") + f"#integrante-{member.id}")
 
@@ -1532,10 +2108,11 @@ def admin_save_team_member(member_id: int):
 @admin_required
 def admin_delete_team_member(member_id: int):
     member = TeamMember.query.get_or_404(member_id)
-    if member.image_storage == "upload":
-        remove_upload(member.image_filename)
+    upload_to_remove = member.image_filename if member.image_storage == "upload" else None
     db.session.delete(member)
     db.session.commit()
+    if upload_to_remove:
+        remove_upload(upload_to_remove)
     flash("Integrante excluído.", "success")
     return redirect(url_for("admin_team"))
 
@@ -1544,7 +2121,7 @@ def admin_delete_team_member(member_id: int):
 def inject_globals():
     site = site_content()
     return {
-        "current_year": datetime.now().year,
+        "current_year": business_now().year,
         "csrf_token": get_csrf_token,
         "image_url": image_url,
         "gallery_image_url": gallery_image_url,

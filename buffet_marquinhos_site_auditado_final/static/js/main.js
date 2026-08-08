@@ -31,17 +31,12 @@ toggle?.addEventListener('click',event=>{
 
 function scrollToSection(target){
   if(!target)return;
-
   const alignTarget=behavior=>{
     const headerHeight=header?.getBoundingClientRect().height||0;
     const top=target.getBoundingClientRect().top+window.scrollY-headerHeight-10;
     window.scrollTo({top:Math.max(0,top),behavior});
   };
-
   alignTarget('smooth');
-
-  // Uma segunda correção compensa mudanças de altura causadas por imagens,
-  // fontes ou pelo fechamento do menu no Safari e em outros navegadores móveis.
   window.setTimeout(()=>{
     const headerHeight=header?.getBoundingClientRect().height||0;
     const correction=target.getBoundingClientRect().top-headerHeight-10;
@@ -58,12 +53,8 @@ document.querySelectorAll('a[href^="#"]').forEach(anchor=>{
     let target;
     try{target=document.querySelector(hash)}catch(_error){return;}
     if(!target)return;
-
     event.preventDefault();
     setMenu(false);
-
-    // No Safari do iPhone, esperar o menu fixo fechar evita que o toque
-    // seja perdido antes do deslocamento até a seção.
     window.setTimeout(()=>{
       scrollToSection(target);
       try{
@@ -89,36 +80,37 @@ window.addEventListener('resize',()=>{
   if(!isMobileMenu())setMenu(false);
 },{passive:true});
 
-window.addEventListener('pageshow',()=>{
-  setMenu(false);
-  if(budgetSubmit){
-    budgetSubmit.disabled=false;
-    budgetSubmit.textContent='Enviar pelo WhatsApp';
-  }
-});
-
 document.querySelectorAll('.filter').forEach(btn=>btn.addEventListener('click',()=>{
   document.querySelectorAll('.filter').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active'); const f=btn.dataset.filter;
+  btn.classList.add('active');
+  const f=btn.dataset.filter;
   document.querySelectorAll('.gallery-item').forEach(item=>item.classList.toggle('hidden',f!=='all'&&item.dataset.category!==f));
 }));
 
-const modal=document.querySelector('.modal'),modalImg=modal?.querySelector('img');
+const modal=document.querySelector('.modal');
+const modalImg=modal?.querySelector('img');
 document.querySelectorAll('.gallery-item img, .team-member-photo img, .open-menu').forEach(el=>el.addEventListener('click',e=>{
-  e.preventDefault(); modalImg.src=el.dataset.full||el.src; modal.classList.add('open'); document.body.style.overflow='hidden';
+  e.preventDefault();
+  if(!modal||!modalImg)return;
+  modalImg.src=el.dataset.full||el.src;
+  modal.classList.add('open');
+  document.body.style.overflow='hidden';
 }));
-function closeModal(){modal?.classList.remove('open');document.body.style.overflow=''}
+function closeModal(){modal?.classList.remove('open');document.body.style.overflow='';}
 document.querySelector('.modal-close')?.addEventListener('click',closeModal);
-modal?.addEventListener('click',e=>{if(e.target===modal)closeModal()});
-addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
+modal?.addEventListener('click',e=>{if(e.target===modal)closeModal();});
+addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
 
 const today=new Date();
 const todayIso=[today.getFullYear(),String(today.getMonth()+1).padStart(2,'0'),String(today.getDate()).padStart(2,'0')].join('-');
-document.querySelectorAll('input[type="date"]').forEach(input=>{if(!input.closest('.admin-body')) input.min=todayIso});
+document.querySelectorAll('input[type="date"]').forEach(input=>{if(!input.closest('.admin-body'))input.min=todayIso;});
 
 async function getAvailability(dateValue){
-  const response=await fetch(`/api/disponibilidade?data=${encodeURIComponent(dateValue)}`,{headers:{Accept:'application/json'}});
-  if(!response.ok) throw new Error('Não foi possível consultar a agenda.');
+  const response=await fetch(`/api/disponibilidade?data=${encodeURIComponent(dateValue)}`,{
+    headers:{Accept:'application/json'},
+    cache:'no-store',
+  });
+  if(!response.ok)throw new Error('Não foi possível consultar a agenda.');
   return response.json();
 }
 
@@ -127,96 +119,195 @@ function paintAvailability(element,data){
   element.className=`availability-result ${data.status}`;
   let detail='Consulte antes de solicitar seu orçamento.';
   if(data.status==='disponivel'){
-    detail=`Ainda há ${data.remaining} vagas nesta data.`;
+    detail=`Ainda há ${data.remaining} vaga(s) nesta data.`;
   }else if(data.status==='ultima_vaga'){
     detail='Entre em contato para reservar a última vaga disponível.';
   }else if(data.status==='lotada'){
-    detail='A data está preenchida no momento, mas entre em contato conosco. Dependendo das características e do horário do evento, poderemos avaliar uma alternativa ou possibilidade excepcional de atendimento.';
+    detail='A data está preenchida no momento, mas entre em contato. Dependendo do horário e das características do evento, a equipe poderá avaliar uma alternativa.';
   }else if(data.status==='indisponivel'){
-    detail='Entre em contato conosco para verificarmos outras possibilidades de atendimento.';
+    detail='Entre em contato para verificarmos outras possibilidades de atendimento.';
   }
   element.innerHTML=`<strong>${data.message}</strong><span>${detail}</span>`;
 }
 
 const availabilityDate=document.querySelector('#availability-date');
 const availabilityResult=document.querySelector('#availability-result');
+let publicAvailabilityRequestId=0;
 async function checkPublicAvailability(){
-  if(!availabilityDate?.value){paintAvailability(availabilityResult,{status:'idle',message:'Escolha uma data',remaining:0});return;}
+    const requestId=++publicAvailabilityRequestId;
+    const requestedDate=availabilityDate?.value||'';
+  if(!requestedDate){
+    paintAvailability(availabilityResult,{status:'idle',message:'Escolha uma data',remaining:0});
+    return;
+  }
   availabilityResult.className='availability-result loading';
   availabilityResult.innerHTML='<strong>Consultando...</strong><span>Aguarde um instante.</span>';
-  try{paintAvailability(availabilityResult,await getAvailability(availabilityDate.value));}
-  catch(error){paintAvailability(availabilityResult,{status:'error',message:error.message,remaining:0});}
+  try{
+    const result=await getAvailability(requestedDate);
+    if(requestId!==publicAvailabilityRequestId||availabilityDate?.value!==requestedDate)return;
+    paintAvailability(availabilityResult,result);
+  }catch(error){
+    if(requestId!==publicAvailabilityRequestId||availabilityDate?.value!==requestedDate)return;
+    paintAvailability(availabilityResult,{status:'error',message:error.message,remaining:0});
+  }
 }
 document.querySelector('#check-availability')?.addEventListener('click',checkPublicAvailability);
 availabilityDate?.addEventListener('change',checkPublicAvailability);
 
+const form=document.querySelector('#orcamento-form');
 const budgetDate=document.querySelector('#budget-date');
 const budgetStatus=document.querySelector('#budget-date-status');
 const budgetSubmit=document.querySelector('#budget-submit');
-let selectedAvailability=null;
-async function checkBudgetDate(){
-  selectedAvailability=null;
-  budgetSubmit.disabled=false;
-  if(!budgetDate?.value){budgetStatus.textContent='A disponibilidade será consultada automaticamente.';return;}
-  budgetStatus.className='field-help checking';budgetStatus.textContent='Consultando agenda...';
-  try{
-    selectedAvailability=await getAvailability(budgetDate.value);
-    budgetStatus.className=`field-help ${selectedAvailability.status}`;
-    if(selectedAvailability.status==='lotada'){
-      budgetStatus.textContent='Agenda preenchida nesta data. Você ainda pode enviar a solicitação para avaliarmos uma possível alternativa de atendimento.';
-    }else if(selectedAvailability.status==='indisponivel'){
-      budgetStatus.textContent='Esta data aparece como indisponível, mas você pode entrar em contato para consultar outras possibilidades.';
-    }else{
-      budgetStatus.textContent=selectedAvailability.message;
-    }
-    budgetSubmit.disabled=false;
-  }catch(error){budgetStatus.className='field-help error';budgetStatus.textContent='Não foi possível consultar agora. Fale conosco pelo WhatsApp.';}
-}
-budgetDate?.addEventListener('change',checkBudgetDate);
-
-function normalizeCity(value){return value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase().replace(/\s+/g,' ')}
 const cityInput=document.querySelector('#event-city');
 const travelWarning=document.querySelector('#travel-warning');
 const travelAware=document.querySelector('#travel-aware');
-const baseCity=normalizeCity(document.querySelector('#orcamento-form')?.dataset.baseCity||'Praia Grande');
+const packageChoice=document.querySelector('#package-choice');
+const packageSummary=document.querySelector('#package-summary');
+const guestsInput=form?.querySelector('input[name="convidados"]');
+const menuOptions=[...document.querySelectorAll('[data-menu-option="1"]')];
+const menuChoiceGroups=[...document.querySelectorAll('.menu-choice-group')];
+const packageAwareMenuGroups=[...document.querySelectorAll('[data-requires-feature]')];
+const menuSelectionSummary=document.querySelector('#menu-selection-summary');
+const customMenuInput=document.querySelector('#custom-menu');
+let selectedAvailability=null;
+let budgetAvailabilityRequestId=0;
+
+window.addEventListener('pageshow',()=>{
+  setMenu(false);
+  if(budgetSubmit){
+    budgetSubmit.disabled=false;
+    budgetSubmit.textContent='Enviar pelo WhatsApp';
+  }
+});
+
+async function checkBudgetDate(){
+  const requestId=++budgetAvailabilityRequestId;
+  const requestedDate=budgetDate?.value||'';
+  selectedAvailability=null;
+  if(!requestedDate){
+    if(budgetStatus){
+      budgetStatus.className='field-help';
+      budgetStatus.textContent='A disponibilidade será consultada automaticamente.';
+    }
+    return;
+  }
+  if(budgetStatus){
+    budgetStatus.className='field-help checking';
+    budgetStatus.textContent='Consultando agenda...';
+  }
+  try{
+    const result=await getAvailability(requestedDate);
+    if(requestId!==budgetAvailabilityRequestId||budgetDate?.value!==requestedDate)return;
+    selectedAvailability=result;
+    if(!budgetStatus)return;
+    budgetStatus.className=`field-help ${selectedAvailability.status}`;
+    if(selectedAvailability.status==='lotada'){
+      budgetStatus.textContent='Agenda preenchida nesta data. Você ainda pode enviar a solicitação para avaliarmos uma alternativa.';
+    }else if(selectedAvailability.status==='indisponivel'){
+      budgetStatus.textContent='Esta data aparece como indisponível, mas você pode consultar outras possibilidades.';
+    }else{
+      budgetStatus.textContent=selectedAvailability.message;
+    }
+  }catch(_error){
+    if(requestId!==budgetAvailabilityRequestId||budgetDate?.value!==requestedDate)return;
+    if(budgetStatus){
+      budgetStatus.className='field-help error';
+      budgetStatus.textContent='Não foi possível consultar agora. O pedido ainda pode ser enviado pelo WhatsApp.';
+    }
+  }
+}
+budgetDate?.addEventListener('change',checkBudgetDate);
+
+function normalizeCity(value){
+  return (value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase().replace(/\s+/g,' ');
+}
+const baseCity=normalizeCity(form?.dataset.baseCity||'Praia Grande');
 function checkTravel(){
   const city=normalizeCity(cityInput?.value||'');
   const outside=Boolean(city)&&city!==baseCity&&city!==`${baseCity} sc`&&city!==`${baseCity}/sc`;
   travelWarning?.classList.toggle('hidden',!outside);
-  if(travelAware) travelAware.required=outside;
+  if(travelAware)travelAware.required=outside;
   return outside;
 }
 cityInput?.addEventListener('input',checkTravel);
 
-const menuCheckboxes=[...document.querySelectorAll('input[name="cardapio"]')];
-const menuChoiceGroups=[...document.querySelectorAll('.menu-choice-group')];
-const menuSelectionSummary=document.querySelector('#menu-selection-summary');
-const customMenuInput=document.querySelector('#custom-menu');
+function currentPackageFeatures(){
+  const option=packageChoice?.selectedOptions?.[0];
+  return {
+    entry:option?.dataset.entry||'unknown',
+    dessert:option?.dataset.dessert||'unknown',
+  };
+}
+
+function updatePackageState(){
+  const features=currentPackageFeatures();
+  if(packageSummary){
+    if(features.entry==='unknown'||features.dessert==='unknown'){
+      packageSummary.textContent='A equipe pode ajudar você a escolher o pacote ideal.';
+    }else{
+      const entry=features.entry==='1'?'com entrada':'sem entrada';
+      const dessert=features.dessert==='1'?'com sobremesa':'sem sobremesa';
+      packageSummary.textContent=`Este pacote é ${entry} e ${dessert}.`;
+    }
+  }
+
+  packageAwareMenuGroups.forEach(group=>{
+    const requiredFeature=group.dataset.requiresFeature||'always';
+    let visible=true;
+    if(requiredFeature==='entry'&&features.entry==='0')visible=false;
+    if(requiredFeature==='dessert'&&features.dessert==='0')visible=false;
+    group.classList.toggle('hidden',!visible);
+    group.setAttribute('aria-hidden',String(!visible));
+    if(!visible){
+      group.querySelectorAll('[data-menu-option="1"]').forEach(input=>{
+        input.checked=false;
+        input.disabled=false;
+      });
+    }
+  });
+  updateMenuSummary();
+}
+packageChoice?.addEventListener('change',updatePackageState);
+
+function groupInputs(group){
+  return [...group.querySelectorAll('[data-menu-option="1"]')];
+}
 
 function groupRules(group){
+  const min=Math.max(0,Number.parseInt(group.dataset.minChoices||'0',10)||0);
+  const configuredMax=Math.max(0,Number.parseInt(group.dataset.maxChoices||'0',10)||0);
+  const per100=Math.max(0,Number.parseInt(group.dataset.choicesPer100||'0',10)||0);
+  const guests=Math.max(0,Number.parseInt(guestsInput?.value||'0',10)||0);
+  let max=configuredMax;
+  if(per100>0){
+    // Sem número de convidados, mostramos o primeiro bloco de 100. Quando o cliente
+    // informa a quantidade, cada bloco iniciado de 100 libera mais opções.
+    const blocks=Math.max(1,Math.ceil((guests||1)/100));
+    max=per100*blocks;
+  }
   return {
-    min:Math.max(0,Number.parseInt(group.dataset.minChoices||'0',10)||0),
-    max:Math.max(0,Number.parseInt(group.dataset.maxChoices||'0',10)||0),
+    min,
+    max,
+    per100,
+    guests,
+    mode:group.dataset.selectionMode||'multiple',
     name:group.dataset.categoryName||group.querySelector('h3')?.textContent?.trim()||'Categoria',
   };
 }
 
-function groupCheckboxes(group){
-  return [...group.querySelectorAll('input[name="cardapio"]')];
-}
-
 function updateGroupState(group,message=''){
-  const inputs=groupCheckboxes(group);
+  if(group.classList.contains('hidden'))return;
+  const inputs=groupInputs(group);
   const checked=inputs.filter(input=>input.checked);
-  const {min,max}=groupRules(group);
+  const {min,max,per100,guests,mode}=groupRules(group);
   const status=group.querySelector('.menu-group-status');
 
-  // Quando o limite máximo é atingido, as demais opções ficam temporariamente
-  // desabilitadas. Basta desmarcar uma opção para liberar as outras novamente.
-  const atLimit=max>0 && checked.length>=max;
-  inputs.forEach(input=>{
-    input.disabled=atLimit&&!input.checked;
-  });
+  if(mode==='multiple'){
+    const atLimit=max>0&&checked.length>=max;
+    inputs.forEach(input=>{input.disabled=atLimit&&!input.checked;});
+  }else{
+    inputs.forEach(input=>{input.disabled=false;});
+  }
 
   if(!status)return;
   if(message){
@@ -225,7 +316,14 @@ function updateGroupState(group,message=''){
     return;
   }
 
-  if(min>0 && checked.length<min){
+  if(per100>0){
+    const guestDetail=guests>0?` para ${guests} convidado(s)`:'';
+    status.textContent=`${checked.length} de até ${Math.min(max,inputs.length)} opção(ões) selecionada(s)${guestDetail}.`;
+    status.className='menu-group-status field-help success';
+  }else if(mode==='single'){
+    status.textContent=checked.length?'1 opção selecionada.':'Escolha 1 opção.';
+    status.className=`menu-group-status field-help ${checked.length?'success':''}`;
+  }else if(min>0&&checked.length<min){
     status.textContent=`${checked.length} selecionada(s). Mínimo: ${min}.`;
     status.className='menu-group-status field-help';
   }else if(max>0){
@@ -242,7 +340,7 @@ function updateGroupState(group,message=''){
 
 function selectedMenuByCategory(){
   const groups=new Map();
-  menuCheckboxes.filter(input=>input.checked).forEach(input=>{
+  menuOptions.filter(input=>input.checked).forEach(input=>{
     const category=input.dataset.category||'Outras opções';
     if(!groups.has(category))groups.set(category,[]);
     groups.get(category).push(input.value);
@@ -252,23 +350,24 @@ function selectedMenuByCategory(){
 
 function updateMenuSummary(){
   menuChoiceGroups.forEach(group=>updateGroupState(group));
-  const count=menuCheckboxes.filter(input=>input.checked).length;
+  const count=menuOptions.filter(input=>input.checked).length;
   if(!menuSelectionSummary)return;
   menuSelectionSummary.textContent=count
-    ? `${count} opção(ões) selecionada(s).`
-    : 'Nenhuma opção marcada. Você pode enviar assim mesmo quando não houver quantidade mínima configurada.';
+    ? `${count} escolha(s) registrada(s). Os demais itens do buffet não precisam ser marcados.`
+    : 'Faça apenas as escolhas indicadas. Churrasco, saladas e itens inclusos não precisam ser marcados.';
   menuSelectionSummary.className=`field-help ${count?'success':''}`;
 }
 
 function validateMenuSelection(){
   for(const group of menuChoiceGroups){
-    const inputs=groupCheckboxes(group);
+    if(group.classList.contains('hidden'))continue;
+    const inputs=groupInputs(group);
     const count=inputs.filter(input=>input.checked).length;
     const {min,max,name}=groupRules(group);
     let message='';
-    if(min>0 && count<min){
-      message=`Em ${name}, escolha pelo menos ${min} opção(ões).`;
-    }else if(max>0 && count>max){
+    if(min>0&&count<min){
+      message=`Em ${name}, escolha ${min===1?'1 opção':`pelo menos ${min} opções`}.`;
+    }else if(max>0&&count>max){
       message=`Em ${name}, escolha no máximo ${max} opção(ões).`;
     }
     if(message){
@@ -280,13 +379,13 @@ function validateMenuSelection(){
   return true;
 }
 
-menuCheckboxes.forEach(input=>input.addEventListener('change',()=>{
+menuOptions.forEach(input=>input.addEventListener('change',()=>{
   const group=input.closest('.menu-choice-group');
   if(group){
-    const inputs=groupCheckboxes(group);
-    const {max}=groupRules(group);
+    const inputs=groupInputs(group);
+    const {max,mode}=groupRules(group);
     const checked=inputs.filter(item=>item.checked);
-    if(max>0 && checked.length>max){
+    if(mode==='multiple'&&max>0&&checked.length>max){
       input.checked=false;
       updateGroupState(group,`Você pode escolher no máximo ${max} opção(ões) nesta categoria.`);
     }else{
@@ -296,87 +395,114 @@ menuCheckboxes.forEach(input=>input.addEventListener('change',()=>{
   updateMenuSummary();
 }));
 
-document.querySelector('#select-menu-all')?.addEventListener('click',()=>{
+document.querySelector('#clear-menu-all')?.addEventListener('click',()=>{
+  menuOptions.forEach(input=>{input.checked=false;input.disabled=false;});
+  updateMenuSummary();
+});
+
+guestsInput?.addEventListener('input',()=>{
   menuChoiceGroups.forEach(group=>{
-    const inputs=groupCheckboxes(group);
-    const {max}=groupRules(group);
-    inputs.forEach((input,index)=>{
-      input.checked=max>0?index<max:true;
-      input.disabled=false;
-    });
+    const {max,mode}=groupRules(group);
+    if(mode==='multiple'&&max>0){
+      const checked=groupInputs(group).filter(input=>input.checked);
+      checked.slice(max).forEach(input=>{input.checked=false;});
+    }
     updateGroupState(group);
   });
   updateMenuSummary();
 });
 
-document.querySelector('#clear-menu-all')?.addEventListener('click',()=>{
-  menuCheckboxes.forEach(input=>{input.checked=false;input.disabled=false});
-  updateMenuSummary();
-});
+updatePackageState();
 updateMenuSummary();
+checkTravel();
 
-const form=document.querySelector('#orcamento-form');
-form?.addEventListener('submit',async e=>{
- e.preventDefault();
- if(!validateMenuSelection())return;
- if(budgetDate?.value && !selectedAvailability) await checkBudgetDate();
- // Mesmo quando a agenda aparece como lotada ou indisponível, a solicitação
- // pode ser enviada para que a equipe avalie alternativas de atendimento.
- const outside=checkTravel();
- if(outside && !travelAware.checked){travelAware.reportValidity();return;}
- const d=new FormData(form);
- const number=String(form.dataset.whatsapp||'').replace(/\D/g,'');
- if(number.length<12){
-   budgetStatus.className='field-help error';
-   budgetStatus.textContent='O número do WhatsApp não está configurado corretamente. Entre em contato pelo botão verde da página.';
-   return;
- }
- const travelText=outside?'Sim — ciente de possível acréscimo de deslocamento.':`Evento em ${form.dataset.baseCity} ou cidade ainda não confirmada.`;
- const selectedMenu=selectedMenuByCategory();
- const menuLines=[];
- selectedMenu.forEach((items,category)=>{
-   menuLines.push(`*${category}:* ${items.join(', ')}`);
- });
- const customMenu=(customMenuInput?.value||'').trim();
- if(customMenu)menuLines.push(`*Pedidos personalizados:* ${customMenu}`);
- const menuText=menuLines.length?menuLines.join('\n'):'Ainda não defini o cardápio e gostaria de orientação.';
- const availabilityText=selectedAvailability
-   ? (selectedAvailability.status==='lotada'
-      ? 'A data aparece como lotada; solicito, se possível, uma avaliação de alternativa ou atendimento excepcional.'
-      : selectedAvailability.status==='indisponivel'
-        ? 'A data aparece como indisponível; gostaria de consultar outras possibilidades.'
-        : selectedAvailability.message)
-   : 'Disponibilidade ainda não consultada.';
- const lines=[
-   `Olá! Gostaria de solicitar um orçamento do ${form.dataset.brand}.`,
-   '',
-   `*Situação da agenda:* ${availabilityText}`,
-   `*Nome:* ${d.get('nome')}`,
-   `*Data do evento:* ${d.get('data')||'A definir'}`,
-   `*Cidade:* ${d.get('cidade')}`,
-   `*Convidados:* ${d.get('convidados')}`,
-   `*Tipo de evento:* ${d.get('evento')}`,
-   `*Pacote:* ${d.get('pacote')}`,
-   '',
-   '*Cardápio solicitado:*',
-   menuText,
-   '',
-   `*Deslocamento:* ${travelText}`,
-   `*Observações:* ${d.get('mensagem')||'Nenhuma'}`
- ];
- const whatsappUrl=new URL('https://api.whatsapp.com/send');
- whatsappUrl.searchParams.set('phone',number);
- whatsappUrl.searchParams.set('text',lines.join('\n'));
+form?.addEventListener('submit',event=>{
+  event.preventDefault();
 
- const fallback=document.querySelector('#whatsapp-fallback');
- if(fallback){
-   fallback.href=whatsappUrl.toString();
-   fallback.classList.remove('hidden');
- }
+  if(!validateMenuSelection())return;
+  const outside=checkTravel();
+  if(outside&&travelAware&&!travelAware.checked){
+    travelAware.reportValidity();
+    return;
+  }
 
- budgetSubmit.disabled=true;
- budgetSubmit.textContent='Abrindo WhatsApp...';
- budgetStatus.className='field-help success';
- budgetStatus.textContent='Abrindo o WhatsApp com a mensagem do orçamento...';
- window.location.assign(whatsappUrl.toString());
+  const data=new FormData(form);
+  const number=String(form.dataset.whatsapp||'').replace(/\D/g,'');
+  if(number.length<12){
+    if(budgetStatus){
+      budgetStatus.className='field-help error';
+      budgetStatus.textContent='O número do WhatsApp não está configurado corretamente. Use o botão verde de contato.';
+    }
+    return;
+  }
+
+  const travelText=outside
+    ? 'Sim — ciente de possível acréscimo de deslocamento.'
+    : `Evento em ${form.dataset.baseCity} ou cidade ainda não confirmada.`;
+  const selectedMenu=selectedMenuByCategory();
+  const menuLines=[];
+  selectedMenu.forEach((items,category)=>{
+    menuLines.push(`*${category}:* ${items.join(', ')}`);
+  });
+  const customMenu=(customMenuInput?.value||'').trim();
+  if(customMenu)menuLines.push(`*Pedido especial/restrição:* ${customMenu}`);
+  if(!menuLines.length)menuLines.push('Sem escolhas adicionais informadas; seguir itens padrão do buffet conforme o pacote.');
+
+  let availabilityText='Disponibilidade será confirmada pela equipe.';
+  if(selectedAvailability){
+    if(selectedAvailability.status==='lotada'){
+      availabilityText='A data aparece como lotada; solicito avaliação de alternativa ou possibilidade excepcional.';
+    }else if(selectedAvailability.status==='indisponivel'){
+      availabilityText='A data aparece como indisponível; gostaria de consultar outras possibilidades.';
+    }else{
+      availabilityText=selectedAvailability.message;
+    }
+  }
+
+  const lines=[
+    `Olá! Gostaria de solicitar um orçamento do ${form.dataset.brand}.`,
+    '',
+    `*Situação da agenda:* ${availabilityText}`,
+    `*Nome:* ${data.get('nome')}`,
+    `*Data do evento:* ${data.get('data')||'A definir'}`,
+    `*Cidade:* ${data.get('cidade')}`,
+    `*Convidados:* ${data.get('convidados')}`,
+    `*Tipo de evento:* ${data.get('evento')}`,
+    `*Pacote:* ${data.get('pacote')}`,
+    '',
+    '*Escolhas do cardápio:*',
+    menuLines.join('\n'),
+    '',
+    '*Itens padrão:* churrasco, saladas e itens inclusos seguem o cardápio do buffet e não precisam de seleção.',
+    `*Deslocamento:* ${travelText}`,
+    `*Observações:* ${data.get('mensagem')||'Nenhuma'}`,
+  ];
+
+  // IMPORTANTE PARA CELULAR: não existe await/fetch entre o clique no botão e
+  // a navegação. Safari/iOS pode bloquear a abertura do WhatsApp quando o gesto
+  // do usuário é perdido após uma operação assíncrona.
+  const whatsappUrl=`https://wa.me/${number}?text=${encodeURIComponent(lines.join('\n'))}`;
+  const fallback=document.querySelector('#whatsapp-fallback');
+  if(fallback){
+    fallback.href=whatsappUrl;
+    fallback.classList.remove('hidden');
+  }
+  if(budgetSubmit){
+    budgetSubmit.disabled=true;
+    budgetSubmit.textContent='Abrindo WhatsApp...';
+  }
+  if(budgetStatus){
+    budgetStatus.className='field-help success';
+    budgetStatus.textContent='Abrindo o WhatsApp com a mensagem do orçamento...';
+  }
+
+  // Se o navegador bloquear a navegação por algum motivo, o usuário não fica
+  // preso com o botão desabilitado: o link alternativo continua disponível.
+  window.setTimeout(()=>{
+    if(document.visibilityState==='visible'&&budgetSubmit){
+      budgetSubmit.disabled=false;
+      budgetSubmit.textContent='Enviar pelo WhatsApp';
+    }
+  },2500);
+  window.location.href=whatsappUrl;
 });

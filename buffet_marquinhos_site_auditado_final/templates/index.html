@@ -50,7 +50,7 @@
 <div class="container stats">
   <div class="stats-grid">
     <div class="stat"><strong>Desde {{ site.since_year }}</strong><span>no ramo de buffet de eventos</span></div>
-    <div class="stat"><strong>Personalizado</strong><span>cardápio conforme o seu evento</span></div>
+    <div class="stat"><strong>Escolhas guiadas</strong><span>você escolhe somente o que varia no cardápio</span></div>
     <div class="stat"><strong>{{ max_events_per_day }}</strong><span>eventos disponíveis por dia</span></div>
     <div class="stat"><strong>Completo</strong><span>louças, talheres e taças inclusos</span></div>
   </div>
@@ -105,7 +105,11 @@
     <div class="menu-layout">
       {% for category in menu_categories %}
       <article class="menu-card {% if category.name|lower == 'incluso' %}included{% endif %}">
-        <h3>{{ category.name }}</h3>
+        <div class="menu-card-title-row">
+          <h3>{{ category.name }}</h3>
+          {% if category.selection_mode == 'single' %}<span class="menu-rule-badge">Escolha 1</span>{% endif %}
+          {% if category.selection_mode == 'multiple' and (category.choices_per_100 or 0) > 0 %}<span class="menu-rule-badge">{{ category.choices_per_100 }} por 100 convidados</span>{% endif %}
+        </div>
         {% if category.description %}<p class="menu-description">{{ category.description }}</p>{% endif %}
         <ul>
           {% for item in category.items if item.active %}<li>{{ item.name }}</li>{% endfor %}
@@ -227,7 +231,7 @@
     <h2 class="section-title">Do orçamento ao grande dia.</h2>
     <div class="process-grid">
       <div class="step"><div class="n">01</div><h3>Consulte a data</h3><p>Veja se a agenda está disponível, com última vaga ou já lotada.</p></div>
-      <div class="step"><div class="n">02</div><h3>Escolha o cardápio</h3><p>Combine entradas, pratos, churrasco, saladas e sobremesas.</p></div>
+      <div class="step"><div class="n">02</div><h3>Escolha o cardápio</h3><p>Selecione somente as opções variáveis; os itens padrão do buffet já estão incluídos conforme o pacote.</p></div>
       <div class="step"><div class="n">03</div><h3>Receba o orçamento</h3><p>A equipe confirma os detalhes, valores e eventual deslocamento.</p></div>
       <div class="step"><div class="n">04</div><h3>Aproveite o evento</h3><p>O buffet cuida do serviço para você celebrar com tranquilidade.</p></div>
     </div>
@@ -254,68 +258,69 @@
         <div class="field"><label>Cidade</label><input required name="cidade" id="event-city" placeholder="Cidade do evento"><small id="travel-warning" class="field-help hidden">Evento fora de {{ site.base_city }}: poderá haver acréscimo de deslocamento.</small></div>
         <div class="field"><label>Número de convidados</label><input required name="convidados" type="number" min="1" placeholder="Ex.: 120"></div>
         <div class="field"><label for="event-type">Tipo de evento</label><select name="evento" id="event-type"><option>Casamento</option><option>Aniversário</option><option>Formatura</option><option>Evento corporativo</option><option>Confraternização</option><option>Outro</option></select></div>
-        <div class="field"><label for="package-choice">Pacote desejado</label><select name="pacote" id="package-choice">{% for package in pricing_packages %}<option>{{ package.name }}</option>{% endfor %}<option>Ainda não sei</option></select></div>
+        <div class="field"><label for="package-choice">Pacote desejado</label><select name="pacote" id="package-choice">{% for package in pricing_packages %}<option data-entry="{{ '1' if package.includes_entry else '0' }}" data-dessert="{{ '1' if package.includes_dessert else '0' }}">{{ package.name }}</option>{% endfor %}<option data-entry="unknown" data-dessert="unknown">Ainda não sei</option></select><small id="package-summary" class="field-help"></small></div>
 
         <fieldset class="field full menu-builder">
-          <legend>Monte seu cardápio</legend>
-          <p class="menu-builder-help">Marque as opções que deseja consultar. A equipe confirmará combinações, quantidades e eventuais ajustes.</p>
+          <legend>Escolhas do cardápio</legend>
+          <p class="menu-builder-help">Você só precisa selecionar os itens que realmente têm escolha. Churrasco, saladas e itens inclusos seguem o padrão do buffet.</p>
           <div class="menu-builder-actions">
-            <button type="button" class="menu-select-action" id="select-menu-all">Selecionar tudo</button>
-            <button type="button" class="menu-select-action" id="clear-menu-all">Limpar seleção</button>
+            <button type="button" class="menu-select-action" id="clear-menu-all">Limpar minhas escolhas</button>
           </div>
           <div class="menu-builder-grid">
             {% for category in menu_categories %}
               {% set active_items = category.items|selectattr('active', 'equalto', true)|list %}
               {% if active_items %}
-              <section
-                class="menu-choice-group"
-                data-category-id="{{ category.id }}"
-                data-category-name="{{ category.name }}"
-                data-min-choices="{{ category.min_choices or 0 }}"
-                data-max-choices="{{ category.max_choices or 0 }}"
-              >
-                <h3>{{ category.name }}</h3>
-                {% if category.selection_help %}
-                  <p class="menu-choice-help">{{ category.selection_help }}</p>
-                {% elif (category.min_choices or 0) > 0 or (category.max_choices or 0) > 0 %}
-                  <p class="menu-choice-help">
-                    {% if (category.min_choices or 0) > 0 and (category.max_choices or 0) > 0 and category.min_choices == category.max_choices %}
-                      Escolha {{ category.min_choices }} opção(ões).
-                    {% elif (category.min_choices or 0) > 0 and (category.max_choices or 0) > 0 %}
-                      Escolha entre {{ category.min_choices }} e {{ category.max_choices }} opção(ões).
-                    {% elif (category.min_choices or 0) > 0 %}
-                      Escolha pelo menos {{ category.min_choices }} opção(ões).
-                    {% else %}
-                      Escolha até {{ category.max_choices }} opção(ões).
-                    {% endif %}
-                  </p>
+                {% if category.selection_mode == 'single' or category.selection_mode == 'multiple' %}
+                <section
+                  class="menu-choice-group"
+                  data-category-id="{{ category.id }}"
+                  data-category-name="{{ category.name }}"
+                  data-selection-mode="{{ category.selection_mode }}"
+                  data-min-choices="{{ category.min_choices or 0 }}"
+                  data-max-choices="{{ category.max_choices or 0 }}"
+                  data-choices-per-100="{{ category.choices_per_100 or 0 }}"
+                  data-requires-feature="{{ category.package_feature or 'always' }}"
+                >
+                  <h3>{{ category.name }}</h3>
+                  {% if category.selection_help %}
+                    <p class="menu-choice-help">{{ category.selection_help }}</p>
+                  {% endif %}
+                  {% for item in active_items %}
+                  <label class="menu-choice">
+                    <input
+                      type="{{ 'radio' if category.selection_mode == 'single' else 'checkbox' }}"
+                      name="cardapio_{{ category.id }}"
+                      value="{{ item.name }}"
+                      data-menu-option="1"
+                      data-category="{{ category.name }}"
+                      data-category-id="{{ category.id }}"
+                    >
+                    <span>{{ item.name }}</span>
+                  </label>
+                  {% endfor %}
+                  <small class="menu-group-status field-help" aria-live="polite"></small>
+                </section>
+                {% else %}
+                <section class="menu-info-group" data-requires-feature="{{ category.package_feature or 'always' }}">
+                  <div class="menu-info-title"><h3>{{ category.name }}</h3><span>Não precisa selecionar</span></div>
+                  {% if category.description %}<p class="menu-choice-help">{{ category.description }}</p>{% endif %}
+                  <ul>
+                    {% for item in active_items %}<li>{{ item.name }}</li>{% endfor %}
+                  </ul>
+                </section>
                 {% endif %}
-                {% for item in active_items %}
-                <label class="menu-choice">
-                  <input
-                    type="checkbox"
-                    name="cardapio"
-                    value="{{ item.name }}"
-                    data-category="{{ category.name }}"
-                    data-category-id="{{ category.id }}"
-                  >
-                  <span>{{ item.name }}</span>
-                </label>
-                {% endfor %}
-                <small class="menu-group-status field-help" aria-live="polite"></small>
-              </section>
               {% endif %}
             {% endfor %}
           </div>
           <label class="custom-menu-label" for="custom-menu">
-            Pratos ou pedidos personalizados
+            Pedido especial ou restrição alimentar
             <textarea
               id="custom-menu"
               name="cardapio_personalizado"
-              placeholder="Ex.: outro tipo de lasanha, prato especial, restrição alimentar ou uma opção que não aparece no cardápio"
+              placeholder="Ex.: restrição alimentar, prato especial ou outra observação sobre o cardápio"
             ></textarea>
           </label>
-          <small id="menu-selection-summary" class="field-help">Nenhuma opção marcada. Você pode enviar assim mesmo e pedir orientação.</small>
+          <small id="menu-selection-summary" class="field-help">Faça apenas as escolhas indicadas acima. Os demais itens já fazem parte do buffet conforme o pacote.</small>
         </fieldset>
 
         <div class="field full"><label for="budget-notes">Observações gerais</label><textarea id="budget-notes" name="mensagem" placeholder="Conte outras informações importantes sobre o evento"></textarea></div>
@@ -333,7 +338,7 @@
     <div class="footer-grid">
       <div><img class="footer-logo" src="{{ image_url(site.logo_storage, site.logo_filename) }}" alt="{{ site.brand_name }}"><p>{{ site.footer_tagline }}</p></div>
       <div><h4>Navegação</h4><a href="#cardapio">Cardápio</a><br><a href="#valores">Valores</a><br><a href="#disponibilidade">Agenda</a><br><a href="#galeria">Galeria</a><br><a href="#equipe">Quem somos</a></div>
-      <div><h4>Contato</h4><a href="https://wa.me/{{ site.whatsapp_number }}" target="_blank" rel="noopener">WhatsApp</a><br><a href="https://www.instagram.com/{{ site.instagram_handle }}" target="_blank" rel="noopener">Instagram</a><br><a href="{{ url_for('admin_login') }}" class="admin-link">Área administrativa</a></div>
+      <div><h4>Contato</h4><a href="https://wa.me/{{ site.whatsapp_number }}" target="_blank" rel="noopener">WhatsApp</a><br><a href="https://www.instagram.com/{{ site.instagram_handle }}" target="_blank" rel="noopener">Instagram</a></div>
     </div>
     <div class="copyright"><span>© {{ current_year }} {{ site.brand_name }}.</span><span>{{ site.base_city }} — Santa Catarina</span></div>
   </div>

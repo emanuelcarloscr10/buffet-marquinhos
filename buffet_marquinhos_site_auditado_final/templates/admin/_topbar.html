@@ -16,3 +16,9 @@
     </form>
   </div>
 </header>
+
+{% if not storage_status.persistent %}
+<div class="admin-storage-warning" role="alert">
+  <strong>Modo de proteção:</strong> o painel está somente para consulta. Conecte o PostgreSQL persistente no Render antes de salvar agenda, cardápio, preços, fotos ou equipe.
+</div>
+{% endif %}

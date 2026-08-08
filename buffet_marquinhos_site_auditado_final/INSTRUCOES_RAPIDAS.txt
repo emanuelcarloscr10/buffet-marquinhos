@@ -1,20 +1,37 @@
-PAINEL DO BUFFET DO MARQUINHOS
+BUFFET DO MARQUINHOS — INSTRUÇÕES RÁPIDAS
 
-Depois de publicado:
-1. Abra o seu domínio.
-2. Acrescente /admin ao final.
-3. Digite a senha criada no Render.
+SITE:
+https://buffetdomarquinhos.com.br
 
-NO PAINEL:
-- Agenda: reservas e disponibilidade.
-- Textos e preços: história, contato, valores, logo e cardápio oficial.
-- Cardápio: pratos e categorias.
-- Fotos: novas imagens, exclusões, capa e seção da história.
+PAINEL:
+https://buffetdomarquinhos.com.br/admin
 
-WHATSAPP CONFIGURADO: (48) 98860-8441
+NÃO RECADASTRE A AGENDA REAL AINDA.
+Primeiro faça a migração descrita em MIGRACAO_RENDER_PRODUCAO.md.
+
+ANTES DE CADASTRAR DADOS REAIS:
+1. O Web Service `buffet-marquinhos` deve usar Instance Type pago (Starter ou superior).
+2. Deve existir Render Postgres conectado em DATABASE_URL.
+3. Deve existir SECRET_KEY e ADMIN_PASSWORD no Environment.
+4. Deve existir Persistent Disk em /var/data.
+5. UPLOAD_ROOT deve ser /var/data/uploads.
+6. BUSINESS_TIMEZONE deve ser America/Sao_Paulo.
+7. No painel, confirme: “Banco: PostgreSQL · Persistente”.
+8. Faça o teste de evento fictício + novo deploy.
+
+CARDÁPIO:
+- Pacote controla entrada e sobremesa.
+- Massas = escolha 1.
+- Strogonoff = Carne ou Frango.
+- Lasanha = escolha 1.
+- Sobremesas = até 3 por 100 convidados.
+- Churrasco, Saladas e Incluso = somente informativos.
+
+WHATSAPP:
+O orçamento abre https://wa.me/ diretamente e possui link alternativo caso o celular bloqueie a abertura automática.
+
+WHATSAPP PADRÃO: (48) 98860-8441
 ANO DE INÍCIO: 2013
+FUSO: America/Sao_Paulo
 
-Leia README.md e GUIA_DOMINIO_E_PUBLICACAO.md para publicar.
-
-
-EQUIPE: acesse /admin/equipe para trocar as imagens provisórias por fotos reais.
+GUIA PRINCIPAL: MIGRACAO_RENDER_PRODUCAO.md
